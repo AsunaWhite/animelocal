@@ -339,16 +339,33 @@ ipcMain.handle('scan:assign', (_event, payload = {}) => {
     else scan.matched.push(assigned);
     scan.matched.sort((a, b) => (a.episode || 0) - (b.episode || 0) || a.path.localeCompare(b.path));
 
-    // 记住文件夹名，下次自动认
+    // 记住文件夹名，下次自动认。
+    // 但只有「文件在子文件夹里」时才值得记：根目录名（比如「10月动画」）是个大杂烩，
+    // 记下来会把整个目录的所有文件都硬认成这一部
     const folderName = path.basename(target.dir || '');
+    const isRootFile = scan.root && path.resolve(target.dir || '') === path.resolve(scan.root);
     const season = scan.season || catalog.currentSeason();
-    if (folderName) library.addAlias(userData, season, showId, folderName);
+    if (folderName && !isRootFile) library.addAlias(userData, season, showId, folderName);
 
     scanner.saveScan(userData, scan);
     console.log(`[scan] 手动指派 ${assigned.name} → ${showTitle} 第 ${episode} 集`);
     return { ok: true, scan: slimScan(scan) };
   } catch (err) {
     console.error('[scan] 指派失败', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+/** 清空本季度的识别记忆（认错越来越多时的急救按钮） */
+ipcMain.handle('scan:forget', () => {
+  const userData = app.getPath('userData');
+  const scan = scanner.loadScan(userData);
+  const season = (scan && scan.season) || catalog.currentSeason();
+  try {
+    const removed = library.forgetAliases(userData, season);
+    console.log(`[scan] 清空识别记忆 ${season}：${removed} 条`);
+    return { ok: true, removed, season };
+  } catch (err) {
     return { ok: false, error: err && err.message ? err.message : String(err) };
   }
 });

@@ -183,15 +183,19 @@ function scoreTitle(candidate, title) {
   const b = normalizeText(title);
   if (!a || !b) return 0;
   if (a === b) return 1;
-  if (a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a))) {
-    // 包含关系，但短的一方太短（<4 字）容易误伤，扣一点
-    const shorter = Math.min(a.length, b.length);
-    return shorter >= 4 ? 0.92 : 0.8;
+  const shorter = Math.min(a.length, b.length);
+  const longer = a.length >= b.length ? a : b;
+  const short = a.length >= b.length ? b : a;
+  // 只有「从头开始对上」才算强证据。
+  // 片段包含很容易误伤：文件名里的 "Horemajo" 会撞上长标题中间的 "horegusuri"
+  if (a.length >= 2 && b.length >= 2 && (longer.startsWith(short) || longer.endsWith(short))) {
+    return shorter >= 6 ? 0.92 : 0.8;
   }
-  if (Math.min(a.length, b.length) < 4) return 0;
-  const ratio = lcsLength(a, b) / Math.min(a.length, b.length);
-  if (ratio >= 0.8) return 0.78;
-  if (ratio >= 0.6) return 0.62;
+  // 含糊的相似度只对够长的名字开放，否则「Romelia Senki」这种会撞上不相关的番
+  if (shorter < 6) return 0;
+  const ratio = lcsLength(a, b) / shorter;
+  if (ratio >= 0.85) return 0.75;
+  if (ratio >= 0.7) return 0.6;
   return 0;
 }
 
@@ -205,21 +209,22 @@ function scoreTitle(candidate, title) {
  * @param {Map<string,string[]>} aliasMap showId -> 用户别名数组
  */
 function matchShow(candidate, shows, aliasMap) {
-  let best = { showId: null, title: '', score: 0 };
+  let best = { showId: null, title: '', score: 0, via: '' };
+  const consider = (show, score, via) => {
+    if (score > best.score) best = { showId: show.id, title: show.title, score, via };
+  };
   for (const show of shows) {
-    let score = scoreTitle(candidate, show.title);
-    if (show.titleJp) score = Math.max(score, scoreTitle(candidate, show.titleJp));
+    consider(show, scoreTitle(candidate, show.title), '标题');
+    if (best.score >= 1) return best;
+    if (show.titleJp) consider(show, scoreTitle(candidate, show.titleJp), '日文名');
+    if (best.score >= 1) return best;
     for (const alias of show.aliases || []) {
-      if (score >= 1) break;
-      score = Math.max(score, scoreTitle(candidate, alias));
+      consider(show, scoreTitle(candidate, alias), `别名:${alias}`);
+      if (best.score >= 1) return best;
     }
-    const aliases = (aliasMap && aliasMap.get(show.id)) || [];
-    for (const alias of aliases) {
-      if (score >= 1) break;
-      score = Math.max(score, scoreTitle(candidate, alias));
-    }
-    if (score > best.score) {
-      best = { showId: show.id, title: show.title, score };
+    for (const alias of (aliasMap && aliasMap.get(show.id)) || []) {
+      consider(show, scoreTitle(candidate, alias), `记忆:${alias}`);
+      if (best.score >= 1) return best;
     }
   }
   return best;
@@ -292,7 +297,7 @@ async function scanDirectory({ root, shows, aliasMap, signal, onProgress }) {
   // 同一个文件夹名只匹配一次：几百个文件往往只分布在几十个文件夹里
   const dirCache = new Map();
   const cacheMatch = (name) => {
-    if (!dirCache.has(name)) dirCache.set(name, matchShow(name, shows, aliasMap));
+    if (!dirCache.has(name)) dirCache.set(name, matchShow(name, shows, aliases));
     return dirCache.get(name);
   };
 
@@ -300,17 +305,35 @@ async function scanDirectory({ root, shows, aliasMap, signal, onProgress }) {
   const unmatched = [];
   const extras = [];
 
+  const rootResolved = path.resolve(root);
+  // 根目录名（比如「10月动画」）是用户随手建的大文件夹名，不代表任何一部作品，
+  // 绝不能用它去匹配 —— 否则整个目录会被硬塞给同一部番
+  const rootBase = path.basename(rootResolved);
+  const rootKey = normalizeText(rootBase);
+  // 万一历史数据里已经存了这条脏别名，这里也过滤掉
+  const aliases = new Map();
+  if (aliasMap) {
+    for (const [id, list] of aliasMap) {
+      const kept = (list || []).filter((a) => {
+        const n = normalizeText(a);
+        return n && n !== rootKey;
+      });
+      if (kept.length) aliases.set(id, kept);
+    }
+  }
+
   for (const file of files) {
     if (signal && signal.aborted) break;
     const ep = parseEpisode(file.name);
-    const dirName = path.basename(file.dir);
-    const fileBase = path.parse(file.name).name;
+    const isRootFile = path.resolve(file.dir) === rootResolved;
+    const dirName = isRootFile ? '' : path.basename(file.dir);
+    const cleaned = cleanName(file.name);
 
-    // 先看文件夹（动漫资源通常按作品分文件夹），再看文件名本身
-    let hit = cacheMatch(dirName);
+    // 子文件夹名通常就是作品名；根目录下的文件只能看文件名
+    let hit = dirName ? cacheMatch(dirName) : { showId: null, title: '', score: 0 };
     let by = '文件夹名';
     if (!hit.showId || hit.score < 0.6) {
-      const fileHit = matchShow(fileBase, shows, aliasMap);
+      const fileHit = matchShow(cleaned, shows, aliases);
       if (fileHit.score > (hit.score || 0)) {
         hit = fileHit;
         by = '文件名';
@@ -331,6 +354,7 @@ async function scanDirectory({ root, shows, aliasMap, signal, onProgress }) {
       showTitle: hit.title,
       score: Number(hit.score.toFixed(2)),
       matchedBy: by,
+      via: hit.via || '',
     };
 
     if (ep.kind === 'extra') {

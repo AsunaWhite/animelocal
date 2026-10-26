@@ -332,6 +332,19 @@ async function pickAndScan() {
   await scanNow(res.dir);
 }
 
+/** 清空识别记忆：之前手动指派记下的文件夹名全忘掉，然后重扫一遍 */
+async function forgetAliases() {
+  const ok = window.confirm('清空本季的识别记忆？\n\n只会忘掉「手动指派」时记住的文件夹名，不会动你的勾选记录和吐槽。');
+  if (!ok) return;
+  const res = await window.api.forgetAliases();
+  if (!res || !res.ok) {
+    setStatus(res && res.error ? `清空失败：${res.error}` : '清空失败');
+    return;
+  }
+  setStatus(`已清空 ${res.removed} 条识别记忆`);
+  if (state.scan && state.scan.root) await scanNow(state.scan.root);
+}
+
 /** 把「扫到啥」的信息贴到界面上：路径、按钮文案、待确认数 */
 function renderScanInfo() {
   const scan = state.scan;
@@ -641,6 +654,7 @@ function bindEvents() {
 
   // 选目录 + 扫描
   $('#btn-scan').addEventListener('click', pickAndScan);
+  $('#btn-forget').addEventListener('click', forgetAliases);
 
   // 集数抽屉
   $('#drawer-close').addEventListener('click', closeDrawer);

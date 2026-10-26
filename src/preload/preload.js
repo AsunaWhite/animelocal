@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('api', {
   /** 手动把某个文件指派给某部动画 */
   assignFile: (payload) => ipcRenderer.invoke('scan:assign', payload),
 
+  /** 清空本季度的识别记忆（认错太多时的急救按钮） */
+  forgetAliases: () => ipcRenderer.invoke('scan:forget'),
+
   /**
    * 订阅扫描进度。返回取消订阅的函数（页面卸载时调一下）。
    * 这是 IPC 的第三种姿势：主进程主动 push，不是渲染进程问一次答一次。

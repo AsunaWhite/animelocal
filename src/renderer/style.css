@@ -695,6 +695,15 @@ body {
   border-radius: 9px;
 }
 
+.btn-ghost {
+  background: transparent;
+  color: var(--text-mute);
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+}
+
 /* 卡片上的「N 集」入口 */
 .ep-badge {
   margin-top: 8px;

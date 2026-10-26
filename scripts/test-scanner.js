@@ -164,6 +164,46 @@ scanner
       check('罗马音文件夹认出的集数', goblin, [3, 4]);
       checkTrue('罗马音不误判成别的番', r2.matched.every((r) => r.showId === goblinId), JSON.stringify(r2.matched.map((r) => [r.name, r.title, r.score])));
       check('罗马音没有落进待确认', r2.unmatched.length, 0);
+
+      // 短名字不该靠模糊相似度硬凑
+      check('短名不再靠模糊相似度乱认', scanner.scoreTitle('Romelia Senki 03', psyrenTitle), 0);
+    });
+  })
+
+  // ---------------- 6. 平铺目录：根目录名不能拿去认番
+  // 用户把好几部番混放在一个「10月动画」里，而且手动指派过 → 整个目录曾被认成同一部
+  .then(() => {
+    const flatRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'animelocal-flat-'));
+    const putFlat = (name) => fs.writeFileSync(path.join(flatRoot, name), 'fake video');
+    putFlat('[SFSub] FX Senshi Kurumi-chan [01][1920x1080][AVC][JPN_CHT].mp4');
+    putFlat('[LoliHouse] Tensei Goblin dakedo Shitsumon Aru - 04 [WebRip 1080p HEVC-10bit AAC SRTx2].mkv');
+    putFlat('[MingY] Romelia Senki [03][WebRip][JPSC].mp4');
+
+    // 模拟历史脏数据：根目录名被记成了哥布林的别名
+    const gobId = byTitle.get(goblinTitle).id;
+    const showsWithAlias = shows.map((s) =>
+      s.id === gobId ? { ...s, aliases: ['Tensei Goblin Dakedo Shitsumon Aru?'] } : s
+    );
+    const dirtyAlias = new Map([[gobId, [path.basename(flatRoot)]]]);
+
+    return scanner.scanDirectory({ root: flatRoot, shows: showsWithAlias, aliasMap: dirtyAlias }).then((r3) => {
+      fs.rmSync(flatRoot, { recursive: true, force: true });
+      const gob = r3.matched.filter((r) => r.showId === gobId).map((r) => r.episode);
+      check('平铺目录里只认哥布林自己那一集', gob, [4]);
+      checkTrue(
+        '根目录名当别名也不生效',
+        r3.matched.length === 1,
+        JSON.stringify(r3.matched.map((r) => [r.name, r.title, r.episode]))
+      );
+      checkTrue(
+        '别的番没被硬塞给哥布林',
+        r3.matched.concat(r3.unmatched).filter((r) => r.showId === gobId).length === 1,
+        JSON.stringify([...r3.matched, ...r3.unmatched].filter((r) => r.showId === gobId).map((r) => r.name))
+      );
+      checkTrue(
+        'Romelia Senki 没被硬塞给 PSYREN',
+        !r3.matched.some((r) => r.name.includes('Romelia') && r.showId === byTitle.get(psyrenTitle).id)
+      );
     });
   })
   .catch((err) => {

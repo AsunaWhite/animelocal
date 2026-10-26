@@ -205,6 +205,21 @@ function addAlias(userData, season, showId, alias) {
   return db.seasons[season][showId];
 }
 
+/** 清掉一个季度的识别记忆（手动指派时记下的文件夹名） */
+function forgetAliases(userData, season) {
+  season = String(season);
+  assertSeason(season);
+  const db = readAliases(userData);
+  const removed = Object.keys(db.seasons[season] || {}).length;
+  delete db.seasons[season];
+  const file = aliasesPath(userData);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+  return removed;
+}
+
 module.exports = {
   VERSION,
   FILE_NAME,
@@ -218,4 +233,5 @@ module.exports = {
   readAliases,
   aliasMap,
   addAlias,
+  forgetAliases,
 };
