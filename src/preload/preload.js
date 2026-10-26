@@ -47,6 +47,15 @@ contextBridge.exposeInMainWorld('api', {
    */
   playFile: (payload) => ipcRenderer.invoke('play:file', payload),
 
+  /** 本季所有吐槽记录 */
+  listNotes: (payload = {}) => ipcRenderer.invoke('notes:list', payload),
+
+  /** 存一条吐槽（文字 / 评分 / 看过时间，传哪个改哪个） */
+  saveNote: (payload) => ipcRenderer.invoke('notes:save', payload),
+
+  /** 删掉一条吐槽 */
+  deleteNote: (payload) => ipcRenderer.invoke('notes:delete', payload),
+
   /**
    * 订阅扫描进度。返回取消订阅的函数（页面卸载时调一下）。
    * 这是 IPC 的第三种姿势：主进程主动 push，不是渲染进程问一次答一次。

@@ -61,7 +61,9 @@ function checkPlayable(scan, filePath) {
     ok: true,
     file: target,
     name: record.name,
+    showId: record.showId || '',
     showTitle: record.showTitle || '',
+    season: scan.season || '',
     episode: record.episode === undefined ? null : record.episode,
     size: stat.size,
   };

@@ -14,13 +14,14 @@ const state = {
   label: '',
   entries: [],
   keyword: '',
-  filter: 'all', // all | owned | pending
+  filter: 'all', // all | owned | pending | notes
   ownedCount: 0,
   loading: false,
   scan: null, // 上次扫描结果：{root, matched, unmatched, extras, scannedAt}
   scanning: false,
   playing: null, // 正在打开的那一集（防连点）
   lastPlayed: null, // 最近播过的那一集路径
+  noteList: [], // 本季所有吐槽（吐槽记录页用）
 };
 
 /** 当前季度：1/4/7/10 月各一档，跟 yuc.wiki 的季度号一致（如 202610） */
@@ -182,6 +183,7 @@ function buildCard(entry) {
   }
 
   card.append(coverBox, body);
+  if (entry.noteCount) paintNoteBadge(card, entry.noteCount);
   return card;
 }
 
@@ -254,53 +256,246 @@ function openDrawer(entry) {
   const eps = episodesOf(entry.id);
   if (!eps.length) return;
   $('#drawer-title').textContent = entry.title;
-  $('#drawer-sub').textContent = `${eps.length} 集 · ${eps[0].dir}`;
+  const noted = eps.filter((f) => f.note && f.note.text).length;
+  $('#drawer-sub').textContent = `${eps.length} 集${noted ? ` · 吐槽 ${noted} 条` : ''} · ${eps[0].dir}`;
 
   const body = $('#drawer-body');
   body.innerHTML = '';
   const list = document.createElement('div');
   list.className = 'ep-list';
   for (const f of eps) {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'ep-row is-playable';
-    row.title = `${f.path}\n点一下就交给默认播放器`;
-    if (state.lastPlayed === f.path) row.classList.add('is-last');
-
-    const no = document.createElement('span');
-    no.className = 'ep-no';
-    no.textContent = fmtEpisode(f);
-
-    const info = document.createElement('div');
-    info.className = 'ep-info';
-    const name = document.createElement('div');
-    name.className = 'ep-name';
-    name.textContent = f.name;
-    const meta = document.createElement('div');
-    meta.className = 'ep-meta';
-    meta.textContent = `${fmtSize(f.size)} · 靠${f.matchedBy}认出`;
-    info.append(name, meta);
-
-    const play = document.createElement('span');
-    play.className = 'ep-play';
-    play.textContent = '▶';
-
-    row.append(no, info, play);
-    row.addEventListener('click', () => playEpisode(f, row));
-    list.appendChild(row);
+    list.appendChild(buildEpisodeItem(f, entry));
   }
   body.appendChild(list);
 
   const tip = document.createElement('p');
   tip.className = 'drawer-tip';
-  tip.textContent = '点任意一集，直接交给系统默认播放器打开 —— 就是双击视频文件时用的那个。';
+  tip.textContent = '点一集直接用默认播放器打开（就是双击视频文件的播放器）；点右边的 ✎ 写这一集的吐槽。';
   body.appendChild(tip);
 
   $('#drawer').hidden = false;
 }
 
+/** 一集 = 可点的行 + 可展开的吐槽区 */
+function buildEpisodeItem(file, entry) {
+  const item = document.createElement('div');
+  item.className = 'ep-item';
+
+  const row = document.createElement('div');
+  row.className = 'ep-row is-playable';
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  row.title = `${file.path}\n点一下就交给默认播放器`;
+  if (state.lastPlayed === file.path) row.classList.add('is-last');
+  if (file.note && file.note.playedAt) row.classList.add('is-watched');
+
+  const no = document.createElement('span');
+  no.className = 'ep-no';
+  no.textContent = fmtEpisode(file);
+
+  const info = document.createElement('div');
+  info.className = 'ep-info';
+  const name = document.createElement('div');
+  name.className = 'ep-name';
+  name.textContent = file.name;
+  const meta = document.createElement('div');
+  meta.className = 'ep-meta';
+  meta.textContent = `${fmtSize(file.size)} · 靠${file.matchedBy}认出`;
+  info.append(name, meta);
+
+  const preview = document.createElement('div');
+  preview.className = 'ep-note-preview';
+  info.appendChild(preview);
+
+  const noteBtn = document.createElement('button');
+  noteBtn.type = 'button';
+  noteBtn.className = 'ep-note-btn';
+  noteBtn.textContent = '✎';
+  noteBtn.title = '给这一集写吐槽';
+
+  const play = document.createElement('span');
+  play.className = 'ep-play';
+  play.textContent = '▶';
+
+  row.append(no, info, noteBtn, play);
+  row.addEventListener('click', () => playEpisode(file, row, noteBtn));
+  row.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      playEpisode(file, row, noteBtn);
+    }
+  });
+
+  // 点 ✎ 只开吐槽区，不触发播放
+  noteBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleNoteEditor(item, file, entry, noteBtn);
+  });
+
+  item.append(row);
+  paintNotePreview(preview, file.note);
+  return item;
+}
+
+/** 抽屉里那条斜体小字：已看过 / 吐槽摘要 */
+function paintNotePreview(el, note) {
+  if (!el) return;
+  el.textContent = '';
+  el.className = 'ep-note-preview';
+  if (!note) return;
+  if (note.text) {
+    el.textContent = note.text.replace(/\s+/g, ' ').slice(0, 60);
+    el.classList.add('has-text');
+  } else if (note.playedAt) {
+    el.textContent = '已看过';
+  }
+}
+
+/** 展开 / 收起某一集的吐槽编辑器 */
+function toggleNoteEditor(item, file, entry, noteBtn) {
+  const exist = item.querySelector('.ep-note');
+  if (exist) {
+    exist.remove();
+    noteBtn.classList.remove('is-active');
+    return;
+  }
+  noteBtn.classList.add('is-active');
+  item.appendChild(buildNoteEditor(file, entry, item, noteBtn));
+}
+
+function buildNoteEditor(file, entry, item, noteBtn) {
+  const box = document.createElement('div');
+  box.className = 'ep-note';
+
+  let rating = file.note ? file.note.rating || 0 : 0;
+
+  const stars = document.createElement('div');
+  stars.className = 'ep-stars';
+  const starBtns = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const star = document.createElement('button');
+    star.type = 'button';
+    star.className = 'star';
+    star.textContent = '★';
+    star.title = `${i} 星`;
+    star.dataset.value = String(i);
+    star.addEventListener('click', () => {
+      rating = rating === i ? 0 : i;
+      paintStars();
+    });
+    starBtns.push(star);
+    stars.appendChild(star);
+  }
+  const starLabel = document.createElement('span');
+  starLabel.className = 'ep-stars-label';
+  stars.appendChild(starLabel);
+
+  function paintStars() {
+    for (const s of starBtns) s.classList.toggle('is-on', Number(s.dataset.value) <= rating);
+    starLabel.textContent = rating ? `${rating} 星` : '没打分';
+  }
+  paintStars();
+
+  const text = document.createElement('textarea');
+  text.className = 'ep-note-text';
+  text.rows = 3;
+  text.maxLength = 2000;
+  text.placeholder = '这一集怎么样？剧情、作画、演出、声优 —— 随便写。Ctrl+Enter 保存。';
+  text.value = file.note ? file.note.text || '' : '';
+
+  const foot = document.createElement('div');
+  foot.className = 'ep-note-foot';
+
+  const hint = document.createElement('span');
+  hint.className = 'ep-note-hint';
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'btn btn-ghost btn-small';
+  del.textContent = '清空';
+  del.disabled = !file.note;
+  del.addEventListener('click', () => removeNote(file, entry, item, noteBtn));
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'btn btn-primary btn-small';
+  save.textContent = '保存';
+  save.addEventListener('click', () => submitNote(file, entry, item, noteBtn, text, rating, save, hint));
+
+  foot.append(hint, del, save);
+  box.append(stars, text, foot);
+
+  text.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      submitNote(file, entry, item, noteBtn, text, rating, save, hint);
+    }
+  });
+
+  setTimeout(() => text.focus(), 30);
+  return box;
+}
+
+async function submitNote(file, entry, item, noteBtn, textEl, rating, saveBtn, hintEl) {
+  saveBtn.disabled = true;
+  try {
+    const res = await window.api.saveNote({
+      season: state.season,
+      showId: file.showId || entry.id,
+      showTitle: entry.title,
+      episode: file.episode,
+      filePath: file.path,
+      text: textEl.value,
+      rating,
+    });
+    if (!res || !res.ok) {
+      hintEl.textContent = `存不了：${(res && res.error) || '未知错误'}`;
+      hintEl.classList.add('is-bad');
+      return;
+    }
+    file.note = res.note ? { ...res.note } : null;
+    paintNotePreview(item.querySelector('.ep-note-preview'), file.note);
+    noteBtn.classList.toggle('is-active', Boolean(file.note));
+    setStatus(res.removed ? '这条吐槽清空了' : `吐槽已保存 · ${fmtEpisode(file)}`);
+    await refreshNotes();
+    // 收起来，留出位置看下一次
+    setTimeout(() => {
+      const box = item.querySelector('.ep-note');
+      if (box) {
+        box.remove();
+        noteBtn.classList.remove('is-active');
+      }
+    }, 260);
+  } catch (err) {
+    hintEl.textContent = `存不了：${err && err.message ? err.message : err}`;
+    hintEl.classList.add('is-bad');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function removeNote(file, entry, item, noteBtn) {
+  if (!file.note || !file.noteKey) return;
+  try {
+    const res = await window.api.deleteNote({ key: file.noteKey });
+    if (!res || !res.ok) {
+      setStatus(`删不掉：${(res && res.error) || '未知错误'}`);
+      return;
+    }
+    file.note = null;
+    paintNotePreview(item.querySelector('.ep-note-preview'), null);
+    noteBtn.classList.remove('is-active');
+    const box = item.querySelector('.ep-note');
+    if (box) box.remove();
+    setStatus(`已清空 ${fmtEpisode(file)} 的吐槽`);
+    await refreshNotes();
+  } catch (err) {
+    setStatus(`删不掉：${err && err.message ? err.message : err}`);
+  }
+}
+
 /** 点一集 → 交给默认播放器 */
-async function playEpisode(file, row) {
+async function playEpisode(file, row, noteBtn) {
   if (state.playing === file.path) return;
   state.playing = file.path;
   row.classList.add('is-loading');
@@ -316,6 +511,12 @@ async function playEpisode(file, row) {
     state.lastPlayed = file.path;
     for (const el of document.querySelectorAll('.ep-row.is-last')) el.classList.remove('is-last');
     row.classList.add('is-last');
+    if (!res.dry) {
+      row.classList.add('is-watched');
+      file.note = { ...(file.note || {}), playedAt: Date.now(), text: file.note ? file.note.text || '' : '', rating: file.note ? file.note.rating || 0 : 0 };
+      paintNotePreview(row.querySelector('.ep-note-preview'), file.note);
+      await refreshNotes();
+    }
     setStatus(`已交给默认播放器：${file.name}${res.dry ? '（试运行，没真打开）' : ''}`);
   } catch (err) {
     setStatus(`打不开这一集：${err && err.message ? err.message : err}`);
@@ -327,6 +528,110 @@ async function playEpisode(file, row) {
 
 function closeDrawer() {
   $('#drawer').hidden = true;
+}
+
+// ---------------------------------------------------------------- 吐槽记录
+
+/** 重新拉一遍本季吐槽，同时刷新卡片上的「吐槽 N」角标 */
+async function refreshNotes() {
+  try {
+    const res = await window.api.listNotes({ season: state.season });
+    state.noteList = res && res.ok ? res.notes : [];
+  } catch {
+    state.noteList = [];
+  }
+  const counts = new Map();
+  for (const n of state.noteList) {
+    if (!n.showId || !String(n.text || '').trim()) continue;
+    counts.set(n.showId, (counts.get(n.showId) || 0) + 1);
+  }
+  state.noteCounts = counts;
+  for (const entry of state.entries) entry.noteCount = counts.get(entry.id) || 0;
+  for (const card of document.querySelectorAll('.card')) {
+    const n = counts.get(card.dataset.id) || 0;
+    const badge = card.querySelector('.note-badge');
+    if (n && badge) badge.textContent = `✎ ${n}`;
+    else if (n && !badge) paintNoteBadge(card, n);
+    else if (!n && badge) badge.remove();
+  }
+  if (state.filter === 'notes') renderNotes();
+}
+
+/** 卡片上的吐槽角标（有吐槽才加） */
+function paintNoteBadge(card, n) {
+  const body = card.querySelector('.card-body');
+  if (!body) return;
+  const chip = document.createElement('span');
+  chip.className = 'note-badge';
+  chip.textContent = `✎ ${n}`;
+  chip.title = `写了 ${n} 条吐槽`;
+  body.appendChild(chip);
+}
+
+/** 「吐槽记录」页：本季写过的所有吐槽，按最近更新排 */
+function renderNotes() {
+  const grid = $('#grid');
+  const pending = $('#pending');
+  const notesView = $('#notes');
+  grid.hidden = true;
+  pending.hidden = true;
+  notesView.hidden = false;
+  notesView.innerHTML = '';
+
+  const items = state.noteList.filter((n) => String(n.text || '').trim() || n.rating);
+  updateCount();
+
+  if (!items.length) {
+    showState({
+      emoji: '💬',
+      title: '还没有吐槽',
+      desc: '回「本季新番」，点封面下的「N 集」打开抽屉，点某一集右边的 ✎ 就能写这一集的想法。',
+    });
+    return;
+  }
+  hideState();
+
+  const frag = document.createDocumentFragment();
+  for (const note of items) {
+    const row = document.createElement('article');
+    row.className = 'note-row';
+
+    const head = document.createElement('div');
+    head.className = 'note-head';
+
+    const ep = document.createElement('span');
+    ep.className = 'note-ep';
+    ep.textContent = note.episode == null ? '未分集' : `EP ${String(note.episode).padStart(2, '0')}`;
+
+    const title = document.createElement('button');
+    title.type = 'button';
+    title.className = 'note-title';
+    title.textContent = note.showTitle || '（未命名）';
+    title.title = '打开这部动画的集数列表';
+    title.addEventListener('click', () => {
+      const entry = state.entries.find((e) => e.id === note.showId);
+      if (entry && episodesOf(entry.id).length) openDrawer(entry);
+      else setStatus('这一部本地还没有认出视频文件');
+    });
+
+    const stars = document.createElement('span');
+    stars.className = 'note-stars';
+    stars.textContent = note.rating ? '★'.repeat(note.rating) : '';
+
+    const when = document.createElement('span');
+    when.className = 'note-when';
+    when.textContent = fmtTime(new Date(note.updatedAt || note.createdAt).toISOString());
+
+    head.append(ep, title, stars, when);
+
+    const text = document.createElement('p');
+    text.className = 'note-text';
+    text.textContent = note.text || '（只打了分，没写字）';
+
+    row.append(head, text);
+    frag.appendChild(row);
+  }
+  notesView.appendChild(frag);
 }
 
 // ---------------------------------------------------------------- 扫目录
@@ -419,6 +724,7 @@ function renderPending() {
   const box = $('#pending');
   grid.hidden = true;
   grid.innerHTML = '';
+  $('#notes').hidden = true;
 
   const list = (state.scan && state.scan.unmatched) || [];
   box.innerHTML = '';
@@ -561,6 +867,11 @@ function updateCount() {
     $('#count').textContent = n ? `待确认 ${n} 个文件` : '没有待确认的文件';
     return;
   }
+  if (state.filter === 'notes') {
+    const written = state.noteList.filter((n) => String(n.text || '').trim() || n.rating).length;
+    $('#count').textContent = written ? `吐槽 ${written} 条` : '还没有吐槽';
+    return;
+  }
   const total = state.entries.length;
   const owned = state.entries.filter((e) => e.owned).length;
   state.ownedCount = owned;
@@ -583,12 +894,17 @@ function renderCards() {
     renderPending();
     return;
   }
+  if (state.filter === 'notes') {
+    renderNotes();
+    return;
+  }
 
   const kw = state.keyword.trim().toLowerCase();
   const list = visibleEntries();
 
   const grid = $('#grid');
   $('#pending').hidden = true;
+  $('#notes').hidden = true;
   grid.innerHTML = '';
   const frag = document.createDocumentFragment();
   for (const entry of list) frag.appendChild(buildCard(entry));
@@ -720,9 +1036,12 @@ function bindEvents() {
   }
 }
 
-/** 切「全部 / 我有的 / 待确认」，同时把侧栏和分段按钮的高亮对齐 */
+/** 切「全部 / 我有的 / 待确认 / 吐槽记录」，同时把侧栏和分段按钮的高亮对齐 */
 function setFilter(filter) {
-  state.filter = ['owned', 'pending'].includes(filter) ? filter : 'all';
+  state.filter = ['owned', 'pending', 'notes'].includes(filter) ? filter : 'all';
+  // 「吐槽记录」是整季的列表，卡片那套筛选按钮在这儿没意义
+  const seg = document.querySelector('.seg');
+  if (seg) seg.hidden = state.filter === 'notes';
   for (const btn of document.querySelectorAll('.seg-btn')) {
     btn.classList.toggle('is-active', btn.dataset.filter === state.filter);
   }
@@ -743,6 +1062,7 @@ async function boot() {
   bindEvents();
   await wireAppInfo();
   await loadCatalog(false);
+  await refreshNotes();
   await loadScanState();
 }
 

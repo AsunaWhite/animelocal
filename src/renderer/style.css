@@ -978,3 +978,230 @@ body {
   font-size: 12px;
   color: var(--text-mute);
 }
+
+/* ---------------------------------------------------------------- 阶段 5：吐槽区 */
+
+.note-badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--pink);
+  background: rgba(255, 143, 177, .12);
+  border: 1px solid rgba(255, 143, 177, .28);
+  border-radius: 999px;
+}
+
+.ep-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ep-item > .ep-row {
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
+}
+
+.ep-item:has(.ep-note) > .ep-row {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.ep-note-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  color: var(--text-mute);
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+
+.ep-note-btn:hover {
+  color: var(--pink);
+  border-color: var(--pink);
+}
+
+.ep-note-btn.is-active {
+  color: var(--pink);
+  background: rgba(255, 143, 177, .14);
+  border-color: var(--pink);
+}
+
+.ep-note-preview {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-note-preview.has-text {
+  color: var(--pink);
+  opacity: .85;
+}
+
+.ep-row.is-watched .ep-no {
+  color: #7ee0a3;
+  background: rgba(126, 224, 163, .12);
+}
+
+.ep-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin-top: -1px;
+  background: #151a24;
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
+  animation: drawer-in .16s ease;
+}
+
+.ep-stars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.star {
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: #39405480;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color .12s ease, transform .12s ease;
+}
+
+.star:hover {
+  transform: scale(1.15);
+}
+
+.star.is-on {
+  color: #ffc44d;
+}
+
+.ep-stars-label {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.ep-note-text {
+  width: 100%;
+  min-height: 66px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  background: #0e1219;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  resize: vertical;
+}
+
+.ep-note-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ep-note-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-note-hint {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.ep-note-hint.is-bad {
+  color: #ff8080;
+}
+
+/* 「吐槽记录」页 */
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.note-row {
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+
+.note-row:hover {
+  border-color: rgba(124, 156, 255, .5);
+}
+
+.note-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.note-ep {
+  flex: none;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
+.note-title {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.note-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.note-stars {
+  flex: none;
+  font-size: 12px;
+  color: #ffc44d;
+  letter-spacing: 1px;
+}
+
+.note-when {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.note-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

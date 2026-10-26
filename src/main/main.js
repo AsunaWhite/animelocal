@@ -16,6 +16,7 @@ const catalog = require('./catalog');
 const library = require('./library');
 const scanner = require('./scanner');
 const player = require('./player');
+const notesDb = require('./notes');
 
 // 启动探针：把关键节点写进 .dev/boot.log。
 // 这台机器上 Electron 有时会在「还没跑到 js」的阶段就没了，靠这个日志判断死在哪一步。
@@ -171,6 +172,7 @@ ipcMain.handle('catalog:load', async (_event, opts = {}) => {
 
   // 勾选记录跟番剧表一起发过去，界面不用再多问一次
   const owned = new Set(library.ownedIds(app.getPath('userData'), season));
+  const noteCounts = notesDb.noteCounts(app.getPath('userData'), season);
 
   const entries = data.entries.map((entry) => {
     const local = entry.coverFile && fs.existsSync(entry.coverFile) ? entry.coverFile : null;
@@ -179,6 +181,7 @@ ipcMain.handle('catalog:load', async (_event, opts = {}) => {
       coverFile: undefined,
       coverUrl: local ? pathToFileURL(local).href : entry.cover || null,
       owned: owned.has(entry.id),
+      noteCount: noteCounts.get(entry.id) || 0,
     };
   });
 
@@ -211,21 +214,37 @@ ipcMain.handle('library:toggle', (_event, payload = {}) => {
 /** 把扫描结果里能省掉的字段去掉，别让几百条路径把 IPC 撑爆 */
 function slimScan(scan) {
   if (!scan) return null;
+  const userData = app.getPath('userData');
+  const db = notesDb.readNotes(userData);
   const strip = (list) =>
-    (list || []).map((f) => ({
-      path: f.path,
-      name: f.name,
-      dir: f.dir,
-      size: f.size,
-      ext: f.ext,
-      episode: f.episode,
-      kind: f.kind,
-      range: f.range,
-      showId: f.showId,
-      showTitle: f.showTitle,
-      score: f.score,
-      matchedBy: f.matchedBy,
-    }));
+    (list || []).map((f) => {
+      // 吐槽记录跟着文件一起发过去，界面点开抽屉就有内容，不用再问一次
+      const noteKey = notesDb.noteKey({
+        season: scan.season,
+        showId: f.showId,
+        episode: f.episode,
+        filePath: f.path,
+      });
+      const rec = noteKey ? db.notes[noteKey] : null;
+      return {
+        path: f.path,
+        name: f.name,
+        dir: f.dir,
+        size: f.size,
+        ext: f.ext,
+        episode: f.episode,
+        kind: f.kind,
+        range: f.range,
+        showId: f.showId,
+        showTitle: f.showTitle,
+        score: f.score,
+        matchedBy: f.matchedBy,
+        noteKey,
+        note: rec
+          ? { text: rec.text, rating: rec.rating, playedAt: rec.playedAt, updatedAt: rec.updatedAt }
+          : null,
+      };
+    });
   return {
     root: scan.root,
     season: scan.season,
@@ -371,6 +390,46 @@ ipcMain.handle('scan:forget', () => {
   }
 });
 
+// ---------------------------------------------------------------- 吐槽记录
+
+/** 本季所有吐槽（界面「吐槽记录」页用） */
+ipcMain.handle('notes:list', (_event, payload = {}) => {
+  const userData = app.getPath('userData');
+  const season = /^\d{6}$/.test(payload.season || '') ? payload.season : catalog.currentSeason();
+  try {
+    return { ok: true, season, notes: notesDb.listNotes(userData, { season }) };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+/** 存一条吐槽：文字 / 评分 / 看过时间，传哪个改哪个 */
+ipcMain.handle('notes:save', (_event, payload = {}) => {
+  const userData = app.getPath('userData');
+  try {
+    const season = /^\d{6}$/.test(payload.season || '') ? payload.season : catalog.currentSeason();
+    const result = notesDb.saveNote(userData, { ...payload, season });
+    const ep = result.note && result.note.episode != null ? ` 第 ${result.note.episode} 集` : '';
+    console.log(`[notes] ${result.removed ? '清空' : '保存'} ${result.key}${ep}`);
+    return { ok: true, ...result };
+  } catch (err) {
+    console.error('[notes] 保存失败', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+/** 删掉一条吐槽 */
+ipcMain.handle('notes:delete', (_event, payload = {}) => {
+  const userData = app.getPath('userData');
+  try {
+    const removed = notesDb.deleteNote(userData, String(payload.key || ''));
+    console.log(`[notes] 删除 ${payload.key} → ${removed ? '成功' : '本来就没有'}`);
+    return { ok: true, removed };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
 /** 阶段 4：把某一集交给系统默认播放器（你机器上是 PotPlayer） */
 ipcMain.handle('play:file', async (_event, payload = {}) => {
   const userData = app.getPath('userData');
@@ -392,6 +451,21 @@ ipcMain.handle('play:file', async (_event, payload = {}) => {
       return { ok: false, error: errText };
     }
     console.log(`[play] ${verdict.showTitle || ''} 第 ${verdict.episode} 集 → ${verdict.name}`);
+
+    // 播过就算看过：记一下时间，抽屉里会打勾
+    try {
+      notesDb.saveNote(app.getPath('userData'), {
+        season: verdict.season,
+        showId: verdict.showId,
+        showTitle: verdict.showTitle,
+        episode: verdict.episode,
+        filePath: verdict.file,
+        playedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('[notes] 记播放时间失败（不影响播放）', err);
+    }
+
     return verdict;
   } catch (err) {
     console.error('[play] 失败', err);
