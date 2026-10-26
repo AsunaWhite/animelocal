@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: file: https:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>本季番剧库</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- 左侧导航 -->
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="logomark">番</span>
+          <div class="brand-text">
+            <b>本季番剧库</b>
+            <small>AnimeLocal</small>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item is-active" type="button">本季新番</button>
+          <button class="nav-item" type="button" data-pending>我的收藏</button>
+          <button class="nav-item" type="button" data-pending>吐槽记录</button>
+          <button class="nav-item" type="button" data-pending>设置</button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <span class="phase-chip" id="phase-chip">阶段 1 / 6</span>
+          <span class="ver" id="foot-version">v0.1.0</span>
+        </div>
+      </aside>
+
+      <!-- 主区域 -->
+      <main class="main">
+        <header class="topbar">
+          <div class="season">
+            <span class="dot"></span>
+            <span id="season-label">读取中…</span>
+          </div>
+          <div class="topbar-right">
+            <input class="search" id="search" type="search" placeholder="搜索动画…" />
+            <button class="btn btn-primary" id="refresh" type="button">刷新数据</button>
+          </div>
+        </header>
+
+        <section class="content">
+          <div class="toolbar">
+            <div class="count" id="count">正在读取本季数据…</div>
+            <div class="legend" id="legend">
+              数据来自 yuc.wiki · 缓存 24 小时 · 封面已存到本地
+            </div>
+          </div>
+
+          <div class="grid" id="grid" hidden></div>
+          <div class="skeleton-grid" id="skeleton"></div>
+
+          <div class="state" id="state" hidden>
+            <div class="state-emoji" id="state-emoji">⚠</div>
+            <div class="state-title" id="state-title">出错了</div>
+            <div class="state-desc" id="state-desc"></div>
+            <button class="btn" id="state-retry" type="button">重新抓一次</button>
+          </div>
+        </section>
+
+        <footer class="statusbar">
+          <span class="tag tag-pending" id="ipc-state">IPC 检测中…</span>
+          <span class="status-text" id="status-text">—</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

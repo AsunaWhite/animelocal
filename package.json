@@ -1,0 +1,25 @@
+{
+  "name": "animelocal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "本季番剧库 · 本地动画管理与吐槽工具",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "node scripts/launch.js",
+    "dev": "node scripts/launch.js --dev",
+    "shot": "node scripts/launch.js --shot",
+    "test": "node scripts/test-catalog.js",
+    "test:live": "node scripts/test-catalog.js --live"
+  },
+  "keywords": [
+    "electron",
+    "anime"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.7.0"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0"
+  }
+}
