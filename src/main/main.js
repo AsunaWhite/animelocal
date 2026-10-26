@@ -18,34 +18,47 @@ const scanner = require('./scanner');
 const player = require('./player');
 const notesDb = require('./notes');
 
-// 启动探针：把关键节点写进 .dev/boot.log。
-// 这台机器上 Electron 有时会在「还没跑到 js」的阶段就没了，靠这个日志判断死在哪一步。
-const BOOT_LOG = path.join(__dirname, '..', '..', '.dev', 'boot.log');
-fs.mkdirSync(path.dirname(BOOT_LOG), { recursive: true });
-fs.writeFileSync(BOOT_LOG, '');
+// 开发期才有 .dev 目录；打包后的 asar 是只读的，写日志会直接崩，所以这里必须跳过。
+const IS_PACKAGED = app.isPackaged;
+const DEV_ROOT = path.join(__dirname, '..', '..');
+const BOOT_LOG = path.join(DEV_ROOT, '.dev', 'boot.log');
 function trace(msg) {
+  if (IS_PACKAGED) return;
   try {
     fs.appendFileSync(BOOT_LOG, `${new Date().toISOString()} ${msg}\n`);
   } catch {
     /* ignore */
   }
 }
-trace(`main.js loaded pid=${process.pid} argv=${process.argv.join(' ')}`);
+if (!IS_PACKAGED) {
+  try {
+    fs.mkdirSync(path.dirname(BOOT_LOG), { recursive: true });
+    fs.writeFileSync(BOOT_LOG, '');
+  } catch {
+    /* ignore */
+  }
+  trace(`main.js loaded pid=${process.pid} argv=${process.argv.join(' ')}`);
+}
+
+// 打包后 productName 会让 userData 变成 %APPDATA%\AnimeLocal，和开发期的 %APPDATA%\animelocal
+// 不是同一个目录。这里钉死成同一个，勾选/扫描/吐槽在开发和打包版之间共用。
+app.setPath('userData', path.join(app.getPath('appData'), 'animelocal'));
 
 const ARGS = new Set(process.argv.slice(1));
-const IS_DEV = ARGS.has('--dev');
-const IS_SHOT = ARGS.has('--shot'); // 截图模式：给人（和 AI）看界面用
+// --dev / --shot / --eval 这些调试入口只在开发期生效，打包后一律无视。
+const IS_DEV = !IS_PACKAGED && ARGS.has('--dev');
+const IS_SHOT = !IS_PACKAGED && ARGS.has('--shot'); // 截图模式：给人（和 AI）看界面用
 
 // 截图前先执行一段界面脚本，用来验证交互（点按钮、切筛选）。
 // 用法：node scripts/launch.js --shot "--eval=document.querySelector('.own-btn').click()"
 // 代码里有引号嵌套时改用文件：--eval-file=.dev/click.js
-const EVAL_ARG = process.argv.slice(1).find((a) => a.startsWith('--eval='));
-const EVAL_FILE_ARG = process.argv.slice(1).find((a) => a.startsWith('--eval-file='));
+const EVAL_ARG = IS_PACKAGED ? null : process.argv.slice(1).find((a) => a.startsWith('--eval='));
+const EVAL_FILE_ARG = IS_PACKAGED ? null : process.argv.slice(1).find((a) => a.startsWith('--eval-file='));
 let SHOT_EVAL = EVAL_ARG ? EVAL_ARG.slice('--eval='.length) : '';
 if (!SHOT_EVAL && EVAL_FILE_ARG) {
   try {
     SHOT_EVAL = fs.readFileSync(
-      path.resolve(path.join(__dirname, '..', '..'), EVAL_FILE_ARG.slice('--eval-file='.length)),
+      path.resolve(DEV_ROOT, EVAL_FILE_ARG.slice('--eval-file='.length)),
       'utf8'
     );
   } catch (err) {
@@ -53,8 +66,7 @@ if (!SHOT_EVAL && EVAL_FILE_ARG) {
   }
 }
 
-const ROOT = path.join(__dirname, '..', '..');
-const SHOT_DIR = path.join(ROOT, '.dev');
+const SHOT_DIR = path.join(DEV_ROOT, '.dev');
 
 /** @type {BrowserWindow | null} */
 let win = null;

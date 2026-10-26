@@ -88,6 +88,23 @@ test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（�
 - 左栏「吐槽记录」是整季的列表，按最近更新排，点标题直接跳回那部动画的抽屉
 - 文件写坏了不影响使用：读不出来就当空库（跟 library.json 一个策略），写入仍是临时文件 + 改名
 
+## 打包成 exe
+
+```powershell
+# 国内网络要先设两个镜像，不然会卡在 GitHub 下载（直连不通）
+$env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = 'https://npmmirror.com/mirrors/electron-builder-binaries/'
+
+npm run icon    # 重新生成图标 build/icon.ico（紫粉底 + 白「番」）
+npm run pack    # 免安装版 → dist\win-unpacked\AnimeLocal.exe
+npm run dist    # 单文件版 → dist\AnimeLocal-0.1.0-portable.exe（双击即用）
+```
+
+- **数据是同一份**：打包版和开发版都写 `%APPDATA%\animelocal`，换着用不会丢勾选/扫描/吐槽（`main.js` 里用 `app.setPath('userData', …)` 钉死的，否则 productName 会把它变成 `%APPDATA%\AnimeLocal`）
+- `--shot` / `--eval` 这些调试开关在打包版里自动失效（`app.isPackaged` 判断），界面不会因为多传了个参数就变得奇怪
+- 打包后代码在 asar 里，**只读**。所以开发期的 `.dev/boot.log` 启动探针在打包版里直接跳过，不然一启动就崩
+- 单文件版每次启动会先把 105MB 解压到临时目录，比 `win-unpacked` 慢两三秒；天天用建议用免安装版建个桌面快捷方式
+
 ## 调试小工具
 
 截图模式可以顺带验证交互，改完界面不用手动点：
@@ -128,4 +145,4 @@ node scripts/launch.js --shot "--eval-file=.dev/play-dry.js"
 - [x] 阶段 3 · 扫资源目录 + 集数识别 + 待确认 + 别名记忆
 - [x] 阶段 4 · 点集数用默认播放器播放
 - [x] 阶段 5 · 每集吐槽区 + 吐槽记录页
-- [ ] 阶段 6 · 打包 exe
+- [x] 阶段 6 · 打包 exe（portable 单文件 + win-unpacked 免安装版）

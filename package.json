@@ -15,7 +15,35 @@
     "test:romaji": "node scripts/test-romaji.js",
     "test:play": "node scripts/test-play.js",
     "test:notes": "node scripts/test-notes.js",
-    "test:live": "node scripts/test-catalog.js --live"
+    "test:live": "node scripts/test-catalog.js --live",
+    "icon": "powershell -NoProfile -ExecutionPolicy Bypass -File build/make-icon.ps1",
+    "pack": "electron-builder --win --dir",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.asunawhite.animelocal",
+    "productName": "AnimeLocal",
+    "copyright": "AnimeLocal",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
   },
   "keywords": [
     "electron",
@@ -23,7 +51,8 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "electron": "^44.7.0"
+    "electron": "^44.7.0",
+    "electron-builder": "^26.18.0"
   },
   "dependencies": {
     "cheerio": "^1.2.0"
