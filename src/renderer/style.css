@@ -557,6 +557,91 @@ body {
   line-height: 1.7;
 }
 
+/* ---------------------------------------------------------------- 勾选圈 */
+
+.own-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  background: rgba(9, 11, 16, 0.55);
+  color: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  /* 平时藏起来，鼠标移到卡上才现形；已标记的常驻显示 */
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.card:hover .own-btn,
+.card.is-owned .own-btn,
+.own-btn:focus-visible {
+  opacity: 1;
+}
+
+.own-btn:hover {
+  border-color: var(--ok);
+  color: rgba(255, 255, 255, 0.7);
+  transform: scale(1.08);
+}
+
+.card.is-owned .own-btn {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: #06281c;
+}
+
+.card.is-owned {
+  border-color: rgba(74, 222, 128, 0.42);
+}
+
+/* ---------------------------------------------------------------- 分段筛选 */
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.seg-btn {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn.is-active {
+  background: var(--accent-soft);
+  color: #cfd9ff;
+}
+
 /* ---------------------------------------------------------------- 状态条 */
 
 .statusbar {

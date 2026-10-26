@@ -14,6 +14,8 @@ const state = {
   label: '',
   entries: [],
   keyword: '',
+  filter: 'all', // all | owned
+  ownedCount: 0,
   loading: false,
 };
 
@@ -108,6 +110,18 @@ function buildCard(entry) {
     coverBox.appendChild(badge);
   }
 
+  // 右上角的勾选圈：标记「这部我本地有」
+  const ownBtn = document.createElement('button');
+  ownBtn.type = 'button';
+  ownBtn.className = 'own-btn';
+  ownBtn.dataset.id = entry.id;
+  coverBox.appendChild(ownBtn);
+  paintOwn(card, ownBtn, entry.owned);
+  ownBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleOwned(entry, card, ownBtn);
+  });
+
   const body = document.createElement('div');
   body.className = 'card-body';
 
@@ -151,15 +165,78 @@ function buildCard(entry) {
   return card;
 }
 
+/** 把一张卡的「已标记」外观刷成 owned 的样子（建卡时和保存失败回滚时都用它） */
+function paintOwn(card, btn, owned) {
+  card.classList.toggle('is-owned', Boolean(owned));
+  btn.textContent = owned ? '✓' : '';
+  btn.title = owned ? '已标记：我本地有这部（再点取消）' : '标记：我本地有这部';
+  btn.setAttribute('aria-pressed', String(Boolean(owned)));
+}
+
+/**
+ * 点勾选圈的处理。
+ * 先改界面再发 IPC —— 点下去要立刻有反应，不能等磁盘写完。
+ * 万一主进程写盘失败，再把界面退回去，顺便在状态条说明原因。
+ */
+async function toggleOwned(entry, card, btn) {
+  const next = !entry.owned;
+  entry.owned = next;
+  paintOwn(card, btn, next);
+  updateCount();
+
+  try {
+    const res = await window.api.toggleOwned({
+      season: state.season,
+      id: entry.id,
+      owned: next,
+    });
+    if (!res || !res.ok) throw new Error(res && res.error ? res.error : '主进程没应答');
+    state.ownedCount = res.ownedCount;
+    updateCount();
+    setStatus(`已标记「${entry.title}」，本季一共 ${res.ownedCount} 部`);
+    // 在「我有的」视图里取消勾选，这张卡就该从列表里消失
+    if (state.filter === 'owned' && !next) renderCards();
+  } catch (err) {
+    entry.owned = !next;
+    paintOwn(card, btn, !next);
+    updateCount();
+    setStatus(`保存失败：${err && err.message ? err.message : err}`);
+  }
+}
+
+/** 当前过滤条件下该显示的条目 */
+function visibleEntries() {
+  const kw = state.keyword.trim().toLowerCase();
+  return state.entries.filter((e) => {
+    if (state.filter === 'owned' && !e.owned) return false;
+    if (!kw) return true;
+    return (
+      e.title.toLowerCase().includes(kw) || (e.section || '').toLowerCase().includes(kw)
+    );
+  });
+}
+
+function updateCount() {
+  const total = state.entries.length;
+  const owned = state.entries.filter((e) => e.owned).length;
+  state.ownedCount = owned;
+  const shown = visibleEntries().length;
+  const kw = state.keyword.trim();
+
+  let text;
+  if (state.filter === 'owned') {
+    text = owned ? `我有的 ${owned} 部` : '还没标记任何一部';
+    if (kw) text += ` · 搜出 ${shown} 部`;
+  } else {
+    text = `共 ${total} 部 · 已标记 ${owned} 部`;
+    if (kw) text += ` · 搜出 ${shown} 部`;
+  }
+  $('#count').textContent = text;
+}
+
 function renderCards() {
   const kw = state.keyword.trim().toLowerCase();
-  const list = kw
-    ? state.entries.filter(
-        (e) =>
-          e.title.toLowerCase().includes(kw) ||
-          (e.section || '').toLowerCase().includes(kw)
-      )
-    : state.entries;
+  const list = visibleEntries();
 
   const grid = $('#grid');
   grid.innerHTML = '';
@@ -168,16 +245,22 @@ function renderCards() {
   grid.appendChild(frag);
   grid.hidden = false;
 
-  $('#count').textContent = kw
-    ? `筛出 ${list.length} 部（共 ${state.entries.length} 部）`
-    : `共 ${state.entries.length} 部`;
+  updateCount();
 
   if (!list.length) {
-    showState({
-      emoji: '🔍',
-      title: '没有匹配的动画',
-      desc: kw ? `「${state.keyword}」没搜到，换个词试试` : '这部季度页好像是空的',
-    });
+    if (state.filter === 'owned' && !kw) {
+      showState({
+        emoji: '📚',
+        title: '还没标记任何一部',
+        desc: '回「全部」页面，点卡片封面右上角的圆圈，把本地真有资源的动画标出来。标记会立刻存盘。',
+      });
+    } else {
+      showState({
+        emoji: '🔍',
+        title: '没有匹配的动画',
+        desc: kw ? `「${state.keyword}」没搜到，换个词试试` : '这部季度页好像是空的',
+      });
+    }
   } else {
     hideState();
   }
@@ -201,6 +284,7 @@ async function loadCatalog(force = false) {
     const data = await window.api.loadSeason({ season: state.season, force });
     state.entries = data.entries;
     state.label = data.label || '';
+    state.ownedCount = data.ownedCount || 0;
     renderCards();
     const covers = data.entries.filter((e) => e.coverUrl).length;
     setStatus(
@@ -253,13 +337,33 @@ function bindEvents() {
   $('#refresh').addEventListener('click', () => loadCatalog(true));
   $('#state-retry').addEventListener('click', () => loadCatalog(true));
 
+  // 「全部 / 我有的」分段筛选
+  for (const btn of document.querySelectorAll('.seg-btn')) {
+    btn.addEventListener('click', () => setFilter(btn.dataset.filter));
+  }
+
+  // 左侧导航：本季新番 = 全部，我的收藏 = 只看我标记过的
   for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => {
       if (item.dataset.pending !== undefined) return; // 后面阶段的页面还没做
       for (const el of document.querySelectorAll('.nav-item')) el.classList.remove('is-active');
       item.classList.add('is-active');
+      if (item.dataset.view) setFilter(item.dataset.view);
     });
   }
+}
+
+/** 切「全部 / 我有的」，同时把侧栏和分段按钮的高亮对齐 */
+function setFilter(filter) {
+  state.filter = filter === 'owned' ? 'owned' : 'all';
+  for (const btn of document.querySelectorAll('.seg-btn')) {
+    btn.classList.toggle('is-active', btn.dataset.filter === state.filter);
+  }
+  for (const item of document.querySelectorAll('.nav-item')) {
+    if (!item.dataset.view) continue;
+    item.classList.toggle('is-active', item.dataset.view === state.filter);
+  }
+  if (state.entries.length) renderCards();
 }
 
 // ---------------------------------------------------------------- 启动

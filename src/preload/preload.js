@@ -18,4 +18,10 @@ contextBridge.exposeInMainWorld('api', {
    * @param {{season?: string, force?: boolean}} opts
    */
   loadSeason: (opts = {}) => ipcRenderer.invoke('catalog:load', opts),
+
+  /**
+   * 勾上 / 取消勾上「这部我本地有」，主进程会立刻写进 library.json。
+   * @param {{season?: string, id: string, owned: boolean}} payload
+   */
+  toggleOwned: (payload) => ipcRenderer.invoke('library:toggle', payload),
 });

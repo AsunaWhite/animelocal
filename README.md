@@ -9,7 +9,7 @@ npm install      # 第一次才需要
 npm start        # 启动
 npm run dev      # 启动 + 自动开 DevTools
 npm run shot     # 截图到 .dev/shot.png（验证界面用，截完自动退出）
-npm test         # 离线跑解析测试（对 fixture 对答案，不联网）
+npm test         # 离线跑测试（解析 + 本地库，都不联网）
 node scripts/test-catalog.js --live   # 联网抓当季，验证缓存
 ```
 
@@ -41,6 +41,19 @@ test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（�
 - 数据缓存在 `%APPDATA%\animelocal\`：
   - `catalog/<季度>.{html,json}`：原始页面 + 解析结果，24 小时内不重抓
   - `covers/<季度>/<id>.jpg`：封面，id = 标题的 sha1 前 12 位（稳定，换顺序也不变）
+  - `library.json`：「这部我本地有」的勾选记录，按季度分桶；删掉它等于清空所有标记
+
+## 调试小工具
+
+截图模式可以顺带验证交互，改完界面不用手动点：
+
+```powershell
+# 点前三张卡的勾选圈，然后截图
+node scripts/launch.js --shot "--eval=[...document.querySelectorAll('.own-btn')].slice(0,3).forEach(b=>b.click())"
+
+# 引号太麻烦就用文件
+node scripts/launch.js --shot "--eval-file=.dev/click-owned.js"
+```
 
 ## 踩过的坑
 
@@ -51,7 +64,7 @@ test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（�
 
 - [x] 阶段 0 · 骨架：窗口 + IPC 打通
 - [x] 阶段 1 · 数据源：抓取当季新番 + 封面缓存 + 卡片墙
-- [ ] 阶段 2 · 勾选「我有这部」+ 持久化
+- [x] 阶段 2 · 勾选「我有这部」+ 持久化到 library.json
 - [ ] 阶段 3 · 扫资源目录 + 集数识别 + 待确认
 - [ ] 阶段 4 · 调用默认播放器
 - [ ] 阶段 5 · 每集吐槽区

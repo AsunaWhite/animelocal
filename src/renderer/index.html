@@ -22,14 +22,14 @@
         </div>
 
         <nav class="nav">
-          <button class="nav-item is-active" type="button">本季新番</button>
-          <button class="nav-item" type="button" data-pending>我的收藏</button>
+          <button class="nav-item is-active" type="button" data-view="all">本季新番</button>
+          <button class="nav-item" type="button" data-view="owned">我的收藏</button>
           <button class="nav-item" type="button" data-pending>吐槽记录</button>
           <button class="nav-item" type="button" data-pending>设置</button>
         </nav>
 
         <div class="sidebar-foot">
-          <span class="phase-chip" id="phase-chip">阶段 1 / 6</span>
+          <span class="phase-chip" id="phase-chip">阶段 2 / 6</span>
           <span class="ver" id="foot-version">v0.1.0</span>
         </div>
       </aside>
@@ -49,9 +49,15 @@
 
         <section class="content">
           <div class="toolbar">
-            <div class="count" id="count">正在读取本季数据…</div>
+            <div class="toolbar-left">
+              <div class="seg" id="filter">
+                <button class="seg-btn is-active" data-filter="all" type="button">全部</button>
+                <button class="seg-btn" data-filter="owned" type="button">我有的</button>
+              </div>
+              <div class="count" id="count">正在读取本季数据…</div>
+            </div>
             <div class="legend" id="legend">
-              数据来自 yuc.wiki · 缓存 24 小时 · 封面已存到本地
+              点右上角的圆圈标记「这部我本地有」
             </div>
           </div>
 

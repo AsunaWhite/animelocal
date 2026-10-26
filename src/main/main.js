@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const catalog = require('./catalog');
+const library = require('./library');
 
 // 启动探针：把关键节点写进 .dev/boot.log。
 // 这台机器上 Electron 有时会在「还没跑到 js」的阶段就没了，靠这个日志判断死在哪一步。
@@ -31,6 +32,23 @@ trace(`main.js loaded pid=${process.pid} argv=${process.argv.join(' ')}`);
 const ARGS = new Set(process.argv.slice(1));
 const IS_DEV = ARGS.has('--dev');
 const IS_SHOT = ARGS.has('--shot'); // 截图模式：给人（和 AI）看界面用
+
+// 截图前先执行一段界面脚本，用来验证交互（点按钮、切筛选）。
+// 用法：node scripts/launch.js --shot "--eval=document.querySelector('.own-btn').click()"
+// 代码里有引号嵌套时改用文件：--eval-file=.dev/click.js
+const EVAL_ARG = process.argv.slice(1).find((a) => a.startsWith('--eval='));
+const EVAL_FILE_ARG = process.argv.slice(1).find((a) => a.startsWith('--eval-file='));
+let SHOT_EVAL = EVAL_ARG ? EVAL_ARG.slice('--eval='.length) : '';
+if (!SHOT_EVAL && EVAL_FILE_ARG) {
+  try {
+    SHOT_EVAL = fs.readFileSync(
+      path.resolve(path.join(__dirname, '..', '..'), EVAL_FILE_ARG.slice('--eval-file='.length)),
+      'utf8'
+    );
+  } catch (err) {
+    console.error('[shot] 读不到 eval 文件:', err.message);
+  }
+}
 
 const ROOT = path.join(__dirname, '..', '..');
 const SHOT_DIR = path.join(ROOT, '.dev');
@@ -94,6 +112,14 @@ function createWindow() {
           setTimeout(tick, 250);
           return;
         }
+        if (SHOT_EVAL) {
+          try {
+            await win.webContents.executeJavaScript(SHOT_EVAL);
+            await new Promise((r) => setTimeout(r, 700));
+          } catch (err) {
+            console.error('[shot] eval failed:', err);
+          }
+        }
         try {
           const image = await win.webContents.capturePage();
           fs.mkdirSync(SHOT_DIR, { recursive: true });
@@ -141,12 +167,16 @@ ipcMain.handle('catalog:load', async (_event, opts = {}) => {
     log: (msg) => console.log('[catalog]', msg),
   });
 
+  // 勾选记录跟番剧表一起发过去，界面不用再多问一次
+  const owned = new Set(library.ownedIds(app.getPath('userData'), season));
+
   const entries = data.entries.map((entry) => {
     const local = entry.coverFile && fs.existsSync(entry.coverFile) ? entry.coverFile : null;
     return {
       ...entry,
       coverFile: undefined,
       coverUrl: local ? pathToFileURL(local).href : entry.cover || null,
+      owned: owned.has(entry.id),
     };
   });
 
@@ -155,9 +185,23 @@ ipcMain.handle('catalog:load', async (_event, opts = {}) => {
     label: data.label,
     fetchedAt: data.fetchedAt,
     entries,
+    ownedCount: owned.size,
     fromCache: Boolean(data.fromCache),
     stale: Boolean(data.stale),
   };
+});
+
+/** 勾上 / 取消勾上「这部我本地有」，写进 userData\library.json */
+ipcMain.handle('library:toggle', (_event, payload = {}) => {
+  const season = /^\d{6}$/.test(payload.season || '') ? payload.season : catalog.currentSeason();
+  try {
+    const result = library.setOwned(app.getPath('userData'), season, payload.id, Boolean(payload.owned));
+    console.log(`[library] ${result.owned ? '勾上' : '取消'} ${payload.id} → 本季共 ${result.ownedCount} 部`);
+    return { ok: true, ...result };
+  } catch (err) {
+    console.error('[library] 写入失败', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
 });
 
 // ---------------------------------------------------------------- 生命周期
