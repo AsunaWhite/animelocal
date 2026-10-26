@@ -58,6 +58,12 @@ function testParse() {
   }, null, 2));
 
   assert.ok(withCover >= got.length * 0.8, '封面覆盖率太低，解析可能偏了');
+
+  // 介绍区的日文原名：字幕组用罗马音命名时，靠它去 AniList 换罗马音
+  const withJp = got.filter((e) => e.titleJp);
+  console.log(`  带日文原名 ${withJp.length}/${got.length}`);
+  assert.ok(withJp.length >= got.length * 0.85, '日文原名覆盖率太低，介绍区解析可能偏了');
+  assert.strictEqual(withJp[0].titleJp, 'どうも、好きな人に惚れ薬を依頼された魔女です。', '第 1 部的日文原名不对');
   console.log('✓ fixture 解析通过');
 }
 

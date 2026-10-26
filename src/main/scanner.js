@@ -49,16 +49,35 @@ const NOISE_RE = new RegExp(
 
 // ---------------------------------------------------------------- 文件名清洗
 
-/** 全角转半角、去空白、去标点 —— 用来比标题 */
+/**
+ * 全角转半角、去空白、去标点、去重音符、罗马音归一 —— 用来比标题。
+ * 最后那几步是为了「Tensei Goblin Dakedo Shitsumon Aru」和
+ * 「Tensei Goblin dakedo Shitsumon Aru?」这种大小写/问号/长音差异能对上，
+ * 顺带把训令式（situmon）和赫本式（shitsumon）抹平。
+ */
 function normalizeText(input) {
   return String(input || '')
     .normalize('NFKC')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // ō → o
     .toLowerCase()
     .replace(/[\s\u3000]+/g, '')
     .replace(
       /[·・!！?？,，.。:：;；'"‘’“”()（）[\]【】{}<>《》_\-—~～|/\\+*&%#@=、…]/g,
       ''
-    );
+    )
+    .replace(/sha|sya/g, 'sa')
+    .replace(/shu|syu/g, 'su')
+    .replace(/sho|syo/g, 'so')
+    .replace(/shi|si/g, 'si')
+    .replace(/chi|ti/g, 'ti')
+    .replace(/tsu|tu/g, 'tu')
+    .replace(/fu|hu/g, 'hu')
+    .replace(/ji|zi/g, 'zi')
+    .replace(/ja|zya/g, 'za')
+    .replace(/ju|zyu/g, 'zu')
+    .replace(/jo|zyo/g, 'zo')
+    .replace(/ou|oo/g, 'o');
 }
 
 /** 把「[Lilith-Raws] xxx - 03 (1080p) [ABCD1234].mkv」洗成「xxx」这样的名字 */
@@ -178,16 +197,25 @@ function scoreTitle(candidate, title) {
 
 /**
  * 从整张番剧表里挑最像的那一部。
+ * 除了中文标题，还会比这些别名：
+ *   - show.aliases：季度数据里的罗马音/英文/别名（AniList 给的）
+ *   - aliasMap：用户手动指派时记下的文件夹名
  * @param {string} candidate 文件夹名或文件名
- * @param {Array<{id:string,title:string}>} shows
- * @param {Map<string,string[]>} aliasMap showId -> 别名数组
+ * @param {Array<{id:string,title:string,aliases?:string[]}>} shows
+ * @param {Map<string,string[]>} aliasMap showId -> 用户别名数组
  */
 function matchShow(candidate, shows, aliasMap) {
   let best = { showId: null, title: '', score: 0 };
   for (const show of shows) {
     let score = scoreTitle(candidate, show.title);
+    if (show.titleJp) score = Math.max(score, scoreTitle(candidate, show.titleJp));
+    for (const alias of show.aliases || []) {
+      if (score >= 1) break;
+      score = Math.max(score, scoreTitle(candidate, alias));
+    }
     const aliases = (aliasMap && aliasMap.get(show.id)) || [];
     for (const alias of aliases) {
+      if (score >= 1) break;
       score = Math.max(score, scoreTitle(candidate, alias));
     }
     if (score > best.score) {

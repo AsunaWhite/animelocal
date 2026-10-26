@@ -23,6 +23,7 @@ const cheerio = require('cheerio');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const romaji = require('./romaji');
 
 /** 抓 YouTube 之类会被 403：yuc.wiki 的封面绝不能带 Referer，只能带 UA */
 const UA =
@@ -83,6 +84,79 @@ function idOf(title) {
   return crypto.createHash('sha1').update(title, 'utf8').digest('hex').slice(0, 12);
 }
 
+// ------------------------------------------------ 介绍区：中文名 ↔ 日文名
+
+/**
+ * 「新番介绍部分」里每部作品一张表，标题单元格是 td.title_main_r，
+ * 里面 p.title_cn_r / p.title_jp_r 两行（多行时带 _r1 _r2 _r3 后缀）。
+ * 档期表那边只有中文名，要靠这里补日文原名，再去 AniList 换罗马音。
+ */
+function readIntro($) {
+  const pairs = [];
+  $('.title_main_r').each((_, td) => {
+    const cn = [];
+    const jp = [];
+    $(td)
+      .find('p')
+      .each((__, p) => {
+        const cls = ($(p).attr('class') || '').trim();
+        const text = squish($(p).text());
+        if (!text) return;
+        if (cls.startsWith('title_cn')) cn.push(text);
+        else if (cls.startsWith('title_jp')) jp.push(text);
+      });
+    if (cn.length) pairs.push({ cn: cn.join(' '), jp: jp.join(' ') });
+  });
+  return pairs;
+}
+
+/** 去掉「第2期 / Part.2 / Season 2」这类续作尾巴，再比对中文名 */
+function stripSuffix(title) {
+  let s = String(title || '').trim();
+  const re = /(第[一二三四五六七八九十\d]+[期季部クール]|part\.?\s*\d+|season\s*\d+|\d+(?:st|nd|rd|th)\s*season)$/i;
+  for (let i = 0; i < 3; i += 1) {
+    const next = s.replace(re, '').trim();
+    if (next === s || !next) break;
+    s = next;
+  }
+  return s;
+}
+
+/** 把日文名贴到 entries 上：先精确/包含，再模糊，一对一贪心 */
+function attachTitleJp(entries, pairs) {
+  const pool = pairs
+    .map((p) => ({ ...p, n: romaji.normalizeForMatch(stripSuffix(p.cn)) }))
+    .filter((p) => p.n && p.jp);
+  const used = new Set();
+
+  for (const entry of entries) {
+    const n = romaji.normalizeForMatch(stripSuffix(entry.title));
+    if (!n) continue;
+    let bestIdx = -1;
+    let bestScore = 0;
+    for (let i = 0; i < pool.length; i += 1) {
+      if (used.has(i)) continue;
+      const pn = pool[i].n;
+      let score = 0;
+      if (pn === n) score = 1;
+      else if (pn.includes(n) || n.includes(pn)) score = Math.min(Math.min(pn.length, n.length) / 100 + 0.8, 0.95);
+      else {
+        const r = romaji.lcsRatio(pn, n);
+        score = r >= 0.75 ? r * 0.85 : r >= 0.6 ? r * 0.7 : 0;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0 && bestScore >= 0.6) {
+      entry.titleJp = pool[bestIdx].jp;
+      used.add(bestIdx);
+    }
+  }
+  return used.size;
+}
+
 /**
  * 解析季度页 HTML → 番剧条目数组。
  * 按文档顺序遍历，先记 section，再记条目，行为与旧版 yuc/build.py 对齐。
@@ -108,6 +182,7 @@ function parseCatalog(html, season) {
     }
   };
   visit(body.get(0));
+  attachTitleJp(entries, readIntro($));
 
   return entries;
 }
@@ -245,16 +320,47 @@ function writeJsonAtomic(file, data) {
 }
 
 /**
+ * 缺日文名的旧缓存：用存盘的 html 重新解析一遍补上（不用联网）。
+ * @returns {boolean} 是否有改动
+ */
+function enrichTitleJp(entries, htmlFile) {
+  if (entries.every((e) => e.titleJp)) return false;
+  let html;
+  try {
+    html = fs.readFileSync(htmlFile, 'utf8');
+  } catch {
+    return false;
+  }
+  const $ = cheerio.load(html);
+  const pairs = readIntro($);
+  const before = entries.filter((e) => e.titleJp).length;
+  attachTitleJp(entries, pairs);
+  return entries.filter((e) => e.titleJp).length > before;
+}
+
+/**
  * 拿一个季度的数据。有 24h 内的缓存就直接用，否则重新抓。
  * 抓失败但手里有旧缓存时，返回旧数据并标记 stale。
+ * 顺带把罗马音别名（aliases）挂到每一条上，查不到网络也不影响主流程。
  */
 async function loadSeason(userData, season = currentSeason(), { force = false, log = () => {} } = {}) {
   const p = pathsFor(userData, season);
   const cached = readCache(p);
   const age = cached ? Date.now() - new Date(cached.fetchedAt).getTime() : Infinity;
 
+  const finish = async (entries) => {
+    try {
+      await romaji.attachAliases(entries, userData, season, { log });
+    } catch (err) {
+      log(`aliases 失败（不影响主流程）：${err.message}`);
+    }
+  };
+
   if (!force && cached && age < CACHE_TTL_MS) {
     log(`cache hit ${season} (${cached.entries.length} 部)`);
+    const touched = enrichTitleJp(cached.entries, p.htmlFile);
+    await finish(cached.entries);
+    if (touched) writeJsonAtomic(p.jsonFile, cached);
     return { ...cached, stale: false, fromCache: true };
   }
 
@@ -275,12 +381,15 @@ async function loadSeason(userData, season = currentSeason(), { force = false, l
       fetchedAt: new Date().toISOString(),
       entries,
     };
+    await finish(entries);
     writeJsonAtomic(p.jsonFile, data);
     log(`parsed ${entries.length} 部，封面新下载 ${downloaded}，失败 ${failed}`);
     return { ...data, stale: false, fromCache: false };
   } catch (err) {
     if (cached) {
       log(`fetch failed, fallback to cache: ${err.message}`);
+      enrichTitleJp(cached.entries, p.htmlFile);
+      await finish(cached.entries);
       return { ...cached, stale: true, fromCache: true, error: err.message };
     }
     throw err;
@@ -294,6 +403,8 @@ module.exports = {
   seasonLabel,
   seasonUrl,
   parseCatalog,
+  parseIntro: (html) => readIntro(cheerio.load(html)),
+  attachTitleJp,
   loadSeason,
   pathsFor,
 };

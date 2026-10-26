@@ -143,6 +143,28 @@ scanner
     const talked = result.unmatched.find((r) => r.dir.endsWith('D盘备份资料'));
     checkTrue('别名生效后不再进待确认', !talked, talked ? `仍待确认: ${talked.name}` : '');
     check('别名生效后认出来 6 条', result.matched.length, 6);
+
+    // ---------------- 5. 罗马音（字幕组常见命名）
+    const goblinId = byTitle.get(goblinTitle).id;
+    const romajiShows = shows.map((s) =>
+      s.id === goblinId ? { ...s, aliases: ['Tensei Goblin Dakedo Shitsumon Aru?'] } : s
+    );
+    const romajiRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'animelocal-romaji-'));
+    const put = (rel) => {
+      const full = path.join(romajiRoot, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, 'fake video');
+    };
+    put(path.join('Tensei Goblin dakedo Shitsumon Aru', '[Lilith-Raws] Tensei Goblin dakedo Shitsumon Aru - 03 [1080p].mkv'));
+    put(path.join('Tensei Goblin dakedo Shitsumon Aru', '[Lilith-Raws] Tensei Goblin dakedo Shitsumon Aru - 04 [1080p].mkv'));
+
+    return scanner.scanDirectory({ root: romajiRoot, shows: romajiShows, aliasMap: new Map() }).then((r2) => {
+      fs.rmSync(romajiRoot, { recursive: true, force: true });
+      const goblin = r2.matched.filter((r) => r.showId === goblinId).map((r) => r.episode).sort();
+      check('罗马音文件夹认出的集数', goblin, [3, 4]);
+      checkTrue('罗马音不误判成别的番', r2.matched.every((r) => r.showId === goblinId), JSON.stringify(r2.matched.map((r) => [r.name, r.title, r.score])));
+      check('罗马音没有落进待确认', r2.unmatched.length, 0);
+    });
   })
   .catch((err) => {
     failures.push(`扫描过程抛错: ${err.stack}`);
