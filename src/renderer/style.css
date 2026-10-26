@@ -662,3 +662,251 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------ 阶段 3：扫描 / 集数 / 待确认 */
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.scan-path {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-mute);
+  direction: rtl;
+  text-align: left;
+}
+
+.seg-btn b {
+  margin-left: 2px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+
+/* 卡片上的「N 集」入口 */
+.ep-badge {
+  margin-top: 8px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #0d1117;
+  background: var(--ok);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ep-badge:hover {
+  filter: brightness(1.08);
+}
+
+.card.has-files {
+  border-color: rgba(74, 222, 128, 0.28);
+}
+
+/* 集数抽屉 */
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.drawer-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(520px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.45);
+  animation: drawer-in 0.18s ease-out;
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.drawer-heading h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.drawer-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-mute);
+  word-break: break-all;
+}
+
+.drawer-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  color: var(--text);
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px 24px;
+}
+
+.ep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+}
+
+.ep-no {
+  flex: none;
+  min-width: 44px;
+  text-align: center;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+
+.ep-info {
+  min-width: 0;
+}
+
+.ep-name {
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.drawer-tip {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.6;
+}
+
+/* 待确认列表 */
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pending-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.pend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px 88px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.pend-main {
+  min-width: 0;
+}
+
+.pend-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pend-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pend-show,
+.pend-ep {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.pending-more {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-mute);
+}

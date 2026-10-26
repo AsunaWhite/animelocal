@@ -21,6 +21,8 @@ node scripts/test-catalog.js --live   # 联网抓当季，验证缓存
 src/
   main/main.js        主进程：开窗口、IPC
   main/catalog.js     抓 yuc.wiki + 解析 + 封面缓存（纯 Node，可单独测试）
+  main/library.js     勾选记录 + 别名记忆，原子写 JSON（纯 Node，可单独测试）
+  main/scanner.js     扫本地目录、认作品、抠集数（纯 Node，可单独测试）
   preload/preload.js  桥：只把白名单能力暴露给界面
   renderer/           界面：HTML + CSS + 原生 JS，没有框架、没有打包
     index.html
@@ -29,6 +31,8 @@ src/
 scripts/
   launch.js           启动器：清掉 ELECTRON_RUN_AS_NODE、重定向日志
   test-catalog.js     解析测试
+  test-library.js     勾选记录测试
+  test-scanner.js     集数识别 + 标题匹配 + 真扫目录测试
 test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（对答案基准）
 ```
 
@@ -42,6 +46,17 @@ test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（�
   - `catalog/<季度>.{html,json}`：原始页面 + 解析结果，24 小时内不重抓
   - `covers/<季度>/<id>.jpg`：封面，id = 标题的 sha1 前 12 位（稳定，换顺序也不变）
   - `library.json`：「这部我本地有」的勾选记录，按季度分桶；删掉它等于清空所有标记
+  - `scan.json`：上次扫描结果（扫的哪个目录、认出哪些集、哪些待确认）；删掉它等于重扫
+  - `aliases.json`：手动指派时记住的文件夹名别名，下次扫到同样目录名直接认
+
+## 资源识别怎么做的
+
+先认作品，再抠集数：
+
+1. **认作品**：拿文件夹名（认不出再拿文件名）跟当季番剧表比对 —— 先做规范化（全角转半角、去空格标点），完全一致 / 一方包含另一方 / 最长公共子序列占比 ≥ 60%，分数依次下降。`≥ 0.6` 才算认出来。
+2. **抠集数**：按优先级匹配 `第12话` → `S02E07` → `EP08` → 裸数字（`… - 08 …`），前面先把 `1080p / x265 / WEB-DL / [字幕组]` 这些噪音删掉，还专门把 1900~2100 的数字当年份排除。
+3. **认不出的不猜**：进「待确认」，你手动指定是哪部第几集；指完会记住那个文件夹名，下次自动认。
+4. 同一个文件夹名只比一次（几百个文件通常只落在几十个文件夹里），所以几千个文件也是秒级。
 
 ## 调试小工具
 
@@ -53,7 +68,15 @@ node scripts/launch.js --shot "--eval=[...document.querySelectorAll('.own-btn')]
 
 # 引号太麻烦就用文件
 node scripts/launch.js --shot "--eval-file=.dev/click-owned.js"
+
+# 直接驱动一次扫描（跳过系统选目录对话框），再截图看结果
+node scripts/launch.js --shot "--eval=window.__app.scanNow('D:\\Anime')"
+
+# 切到待确认视图
+node scripts/launch.js --shot "--eval=window.__app.setFilter('pending')"
 ```
+
+`window.__app` 是 `app.js` 末尾挂出来的调试入口，只在界面里存在，不影响正常使用。
 
 ## 踩过的坑
 
@@ -65,7 +88,7 @@ node scripts/launch.js --shot "--eval-file=.dev/click-owned.js"
 - [x] 阶段 0 · 骨架：窗口 + IPC 打通
 - [x] 阶段 1 · 数据源：抓取当季新番 + 封面缓存 + 卡片墙
 - [x] 阶段 2 · 勾选「我有这部」+ 持久化到 library.json
-- [ ] 阶段 3 · 扫资源目录 + 集数识别 + 待确认
+- [x] 阶段 3 · 扫资源目录 + 集数识别 + 待确认 + 别名记忆
 - [ ] 阶段 4 · 调用默认播放器
 - [ ] 阶段 5 · 每集吐槽区
 - [ ] 阶段 6 · 打包 exe

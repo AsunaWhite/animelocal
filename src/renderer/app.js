@@ -14,9 +14,11 @@ const state = {
   label: '',
   entries: [],
   keyword: '',
-  filter: 'all', // all | owned
+  filter: 'all', // all | owned | pending
   ownedCount: 0,
   loading: false,
+  scan: null, // 上次扫描结果：{root, matched, unmatched, extras, scannedAt}
+  scanning: false,
 };
 
 /** 当前季度：1/4/7/10 月各一档，跟 yuc.wiki 的季度号一致（如 202610） */
@@ -161,6 +163,22 @@ function buildCard(entry) {
   }
   if (chips.childNodes.length) body.appendChild(chips);
 
+  // 本地扫到几集？扫到了就给个「N 集」的入口
+  const eps = episodesOf(entry.id);
+  if (eps.length) {
+    card.classList.add('has-files');
+    const epBadge = document.createElement('button');
+    epBadge.type = 'button';
+    epBadge.className = 'ep-badge';
+    epBadge.textContent = `${eps.length} 集`;
+    epBadge.title = `本地认出 ${eps.length} 集，点开看是哪些文件`;
+    epBadge.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openDrawer(entry);
+    });
+    body.appendChild(epBadge);
+  }
+
   card.append(coverBox, body);
   return card;
 }
@@ -204,9 +222,282 @@ async function toggleOwned(entry, card, btn) {
   }
 }
 
+// ---------------------------------------------------------------- 集数 / 抽屉
+
+function fmtSize(bytes) {
+  if (!bytes || bytes < 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return i === 0 ? `${Math.round(n)} ${units[i]}` : `${n.toFixed(1)} ${units[i]}`;
+}
+
+/** 某个动画 id 在本地扫到的集数 */
+function episodesOf(showId) {
+  if (!state.scan || !Array.isArray(state.scan.matched)) return [];
+  return state.scan.matched.filter((f) => f.showId === showId);
+}
+
+function fmtEpisode(f) {
+  if (f.range) return `${f.range[0]}-${f.range[1]}`;
+  if (f.episode === null || f.episode === undefined) return '?';
+  return String(f.episode).padStart(2, '0');
+}
+
+function openDrawer(entry) {
+  const eps = episodesOf(entry.id);
+  if (!eps.length) return;
+  $('#drawer-title').textContent = entry.title;
+  $('#drawer-sub').textContent = `${eps.length} 集 · ${eps[0].dir}`;
+
+  const body = $('#drawer-body');
+  body.innerHTML = '';
+  const list = document.createElement('div');
+  list.className = 'ep-list';
+  for (const f of eps) {
+    const row = document.createElement('div');
+    row.className = 'ep-row';
+    row.title = f.path;
+
+    const no = document.createElement('span');
+    no.className = 'ep-no';
+    no.textContent = fmtEpisode(f);
+
+    const info = document.createElement('div');
+    info.className = 'ep-info';
+    const name = document.createElement('div');
+    name.className = 'ep-name';
+    name.textContent = f.name;
+    const meta = document.createElement('div');
+    meta.className = 'ep-meta';
+    meta.textContent = `${fmtSize(f.size)} · 靠${f.matchedBy}认出`;
+    info.append(name, meta);
+
+    row.append(no, info);
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+
+  const tip = document.createElement('p');
+  tip.className = 'drawer-tip';
+  tip.textContent = '下一阶段（阶段 4）这几行就会变成播放按钮，点了直接用 PotPlayer 打开。';
+  body.appendChild(tip);
+
+  $('#drawer').hidden = false;
+}
+
+function closeDrawer() {
+  $('#drawer').hidden = true;
+}
+
+// ---------------------------------------------------------------- 扫目录
+
+async function scanNow(root) {
+  if (state.scanning) return;
+  state.scanning = true;
+  const btn = $('#btn-scan');
+  btn.disabled = true;
+  btn.textContent = '扫描中…';
+  setStatus(`正在扫 ${root} …`);
+
+  try {
+    const res = await window.api.runScan({ season: state.season, root });
+    if (!res || !res.ok) throw new Error(res && res.error ? res.error : '主进程没应答');
+    state.scan = res.scan;
+    renderScanInfo();
+    if (state.filter === 'pending') renderPending();
+    else renderCards();
+    const s = res.scan;
+    setStatus(
+      `${s.files} 个视频 · 认出 ${s.matched.length} 集 · 待确认 ${s.unmatched.length} 个` +
+        (s.truncated ? ' · ⚠ 文件太多只扫了一部分' : '') +
+        ` · 耗时 ${(s.tookMs / 1000).toFixed(1)} 秒`
+    );
+  } catch (err) {
+    setStatus(`扫描失败：${err && err.message ? err.message : err}`);
+  } finally {
+    state.scanning = false;
+    btn.disabled = false;
+    btn.textContent = state.scan ? '重新扫描' : '选择资源目录';
+  }
+}
+
+async function pickAndScan() {
+  const res = await window.api.pickScanDir();
+  if (!res || !res.ok || res.canceled || !res.dir) return;
+  await scanNow(res.dir);
+}
+
+/** 把「扫到啥」的信息贴到界面上：路径、按钮文案、待确认数 */
+function renderScanInfo() {
+  const scan = state.scan;
+  const pathEl = $('#scan-path');
+  const btn = $('#btn-scan');
+  if (scan && scan.root) {
+    pathEl.textContent = scan.root;
+    pathEl.title = scan.root;
+    btn.textContent = '重新扫描';
+  } else {
+    pathEl.textContent = '还没选资源目录';
+    pathEl.title = '';
+    btn.textContent = '选择资源目录';
+  }
+  const pending = scan && Array.isArray(scan.unmatched) ? scan.unmatched.length : 0;
+  $('#pending-count').textContent = String(pending);
+}
+
+async function loadScanState() {
+  try {
+    const res = await window.api.getScanState();
+    state.scan = res && res.scan ? res.scan : null;
+  } catch {
+    state.scan = null;
+  }
+  renderScanInfo();
+  if (state.entries.length) {
+    if (state.filter === 'pending') renderPending();
+    else renderCards();
+  }
+}
+
+// ---------------------------------------------------------------- 待确认
+
+function renderPending() {
+  const grid = $('#grid');
+  const box = $('#pending');
+  grid.hidden = true;
+  grid.innerHTML = '';
+
+  const list = (state.scan && state.scan.unmatched) || [];
+  box.innerHTML = '';
+
+  if (!list.length) {
+    box.hidden = true;
+    if (state.scan) {
+      showState({
+        emoji: '🎉',
+        title: '没有待确认的文件',
+        desc: '本地扫到的视频都对上号了。以后加新文件，点「重新扫描」就行。',
+      });
+    } else {
+      showState({
+        emoji: '📂',
+        title: '还没选资源目录',
+        desc: '点右上角「选择资源目录」，把你放动画的文件夹告诉我，我来对照这季的番剧表认集数。',
+      });
+    }
+    updateCount();
+    return;
+  }
+
+  hideState();
+  box.hidden = false;
+
+  const title = document.createElement('div');
+  title.className = 'pending-title';
+  title.textContent = `这 ${list.length} 个文件没认出来是谁，你指一下路`;
+  box.appendChild(title);
+
+  for (const f of list.slice(0, 300)) {
+    box.appendChild(buildPendingRow(f));
+  }
+
+  if (list.length > 300) {
+    const more = document.createElement('p');
+    more.className = 'pending-more';
+    more.textContent = `还有 ${list.length - 300} 个没显示，先手动处理前面这些。`;
+    box.appendChild(more);
+  }
+
+  updateCount();
+}
+
+function buildPendingRow(file) {
+  const row = document.createElement('div');
+  row.className = 'pend-row';
+
+  const main = document.createElement('div');
+  main.className = 'pend-main';
+  const name = document.createElement('div');
+  name.className = 'pend-name';
+  name.textContent = file.name;
+  name.title = file.path;
+  const sub = document.createElement('div');
+  sub.className = 'pend-sub';
+  sub.textContent = `${fmtSize(file.size)} · ${file.dir}${file.showTitle ? ` · 像是「${file.showTitle}」` : ''}`;
+  main.append(name, sub);
+
+  const select = document.createElement('select');
+  select.className = 'pend-show';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '选一部…';
+  select.appendChild(placeholder);
+  for (const entry of state.entries) {
+    const opt = document.createElement('option');
+    opt.value = entry.id;
+    opt.textContent = entry.title;
+    if (file.showId === entry.id) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  const epInput = document.createElement('input');
+  epInput.className = 'pend-ep';
+  epInput.type = 'number';
+  epInput.min = '0';
+  epInput.max = '2000';
+  epInput.placeholder = '集数';
+  if (file.episode !== null && file.episode !== undefined) epInput.value = String(file.episode);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-small';
+  btn.textContent = '指派';
+  btn.addEventListener('click', () => assignPending(file, select, epInput, btn));
+
+  row.append(main, select, epInput, btn);
+  return row;
+}
+
+async function assignPending(file, select, epInput, btn) {
+  const showId = select.value;
+  const entry = state.entries.find((e) => e.id === showId);
+  if (!entry) {
+    setStatus('先给它选一部动画');
+    return;
+  }
+  const episodeText = epInput.value.trim();
+  if (episodeText === '') {
+    setStatus('再填个集数（不知道就填 1）');
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const res = await window.api.assignFile({
+      season: state.season,
+      path: file.path,
+      showId,
+      showTitle: entry.title,
+      episode: Number(episodeText),
+    });
+    if (!res || !res.ok) throw new Error(res && res.error ? res.error : '主进程没应答');
+    state.scan = res.scan;
+    renderScanInfo();
+    renderPending();
+    setStatus(`把「${file.name}」记到了「${entry.title}」第 ${episodeText} 集，文件夹名也记住了`);
+  } catch (err) {
+    btn.disabled = false;
+    setStatus(`指派失败：${err && err.message ? err.message : err}`);
+  }
+}
+
 /** 当前过滤条件下该显示的条目 */
-function visibleEntries() {
-  const kw = state.keyword.trim().toLowerCase();
+function visibleEntries() {  const kw = state.keyword.trim().toLowerCase();
   return state.entries.filter((e) => {
     if (state.filter === 'owned' && !e.owned) return false;
     if (!kw) return true;
@@ -217,6 +508,11 @@ function visibleEntries() {
 }
 
 function updateCount() {
+  if (state.filter === 'pending') {
+    const n = state.scan && Array.isArray(state.scan.unmatched) ? state.scan.unmatched.length : 0;
+    $('#count').textContent = n ? `待确认 ${n} 个文件` : '没有待确认的文件';
+    return;
+  }
   const total = state.entries.length;
   const owned = state.entries.filter((e) => e.owned).length;
   state.ownedCount = owned;
@@ -235,10 +531,16 @@ function updateCount() {
 }
 
 function renderCards() {
+  if (state.filter === 'pending') {
+    renderPending();
+    return;
+  }
+
   const kw = state.keyword.trim().toLowerCase();
   const list = visibleEntries();
 
   const grid = $('#grid');
+  $('#pending').hidden = true;
   grid.innerHTML = '';
   const frag = document.createDocumentFragment();
   for (const entry of list) frag.appendChild(buildCard(entry));
@@ -337,6 +639,22 @@ function bindEvents() {
   $('#refresh').addEventListener('click', () => loadCatalog(true));
   $('#state-retry').addEventListener('click', () => loadCatalog(true));
 
+  // 选目录 + 扫描
+  $('#btn-scan').addEventListener('click', pickAndScan);
+
+  // 集数抽屉
+  $('#drawer-close').addEventListener('click', closeDrawer);
+  $('#drawer-mask').addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') closeDrawer();
+  });
+
+  // 扫目录时主进程会主动推进度过来
+  window.api.onScanProgress(({ found, dir }) => {
+    if (!state.scanning) return;
+    setStatus(`正在扫… 已找到 ${found} 个视频（${dir}）`);
+  });
+
   // 「全部 / 我有的」分段筛选
   for (const btn of document.querySelectorAll('.seg-btn')) {
     btn.addEventListener('click', () => setFilter(btn.dataset.filter));
@@ -353,9 +671,9 @@ function bindEvents() {
   }
 }
 
-/** 切「全部 / 我有的」，同时把侧栏和分段按钮的高亮对齐 */
+/** 切「全部 / 我有的 / 待确认」，同时把侧栏和分段按钮的高亮对齐 */
 function setFilter(filter) {
-  state.filter = filter === 'owned' ? 'owned' : 'all';
+  state.filter = ['owned', 'pending'].includes(filter) ? filter : 'all';
   for (const btn of document.querySelectorAll('.seg-btn')) {
     btn.classList.toggle('is-active', btn.dataset.filter === state.filter);
   }
@@ -376,6 +694,11 @@ async function boot() {
   bindEvents();
   await wireAppInfo();
   await loadCatalog(false);
+  await loadScanState();
 }
 
 boot();
+
+// 调试 / 截图模式用：把内部状态和几个动作挂到 window 上，
+// 这样 `node scripts/launch.js --shot "--eval=window.__app.scanNow('D:\\anime')"` 就能驱动界面。
+window.__app = { state, renderCards, renderPending, renderScanInfo, setFilter, scanNow, openDrawer };

@@ -8,9 +8,10 @@
     "start": "node scripts/launch.js",
     "dev": "node scripts/launch.js --dev",
     "shot": "node scripts/launch.js --shot",
-    "test": "node scripts/test-catalog.js && node scripts/test-library.js",
+    "test": "node scripts/test-catalog.js && node scripts/test-library.js && node scripts/test-scanner.js",
     "test:catalog": "node scripts/test-catalog.js",
     "test:library": "node scripts/test-library.js",
+    "test:scanner": "node scripts/test-scanner.js",
     "test:live": "node scripts/test-catalog.js --live"
   },
   "keywords": [

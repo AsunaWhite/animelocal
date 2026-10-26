@@ -29,7 +29,7 @@
         </nav>
 
         <div class="sidebar-foot">
-          <span class="phase-chip" id="phase-chip">阶段 2 / 6</span>
+          <span class="phase-chip" id="phase-chip">阶段 3 / 6</span>
           <span class="ver" id="foot-version">v0.1.0</span>
         </div>
       </aside>
@@ -53,15 +53,20 @@
               <div class="seg" id="filter">
                 <button class="seg-btn is-active" data-filter="all" type="button">全部</button>
                 <button class="seg-btn" data-filter="owned" type="button">我有的</button>
+                <button class="seg-btn" data-filter="pending" type="button">
+                  待确认 <b id="pending-count">0</b>
+                </button>
               </div>
               <div class="count" id="count">正在读取本季数据…</div>
             </div>
-            <div class="legend" id="legend">
-              点右上角的圆圈标记「这部我本地有」
+            <div class="toolbar-right">
+              <span class="scan-path" id="scan-path">还没选资源目录</span>
+              <button class="btn" id="btn-scan" type="button">选择资源目录</button>
             </div>
           </div>
 
           <div class="grid" id="grid" hidden></div>
+          <div class="pending-list" id="pending" hidden></div>
           <div class="skeleton-grid" id="skeleton"></div>
 
           <div class="state" id="state" hidden>
@@ -75,8 +80,24 @@
         <footer class="statusbar">
           <span class="tag tag-pending" id="ipc-state">IPC 检测中…</span>
           <span class="status-text" id="status-text">—</span>
+          <span class="legend" id="legend"></span>
         </footer>
       </main>
+    </div>
+
+    <!-- 集数抽屉：点卡片上的「N 集」打开 -->
+    <div class="drawer" id="drawer" hidden>
+      <div class="drawer-mask" id="drawer-mask"></div>
+      <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+        <header class="drawer-head">
+          <div class="drawer-heading">
+            <h2 id="drawer-title">集数</h2>
+            <p class="drawer-sub" id="drawer-sub"></p>
+          </div>
+          <button class="drawer-close" id="drawer-close" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="drawer-body" id="drawer-body"></div>
+      </aside>
     </div>
 
     <script src="app.js"></script>

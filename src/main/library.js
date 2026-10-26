@@ -132,6 +132,79 @@ function setOwned(userData, season, id, owned) {
   };
 }
 
+// ---------------------------------------------------------------- 别名记忆
+
+/**
+ * 别名：同一部番在不同字幕组手里文件夹名不一样（「D盘备份资料」「[Lilith-Raws] XX」）。
+ * 手动指派时把用来认人的那个名字记下来，下次扫到同样的文件夹就不用再问。
+ * 存 userData/aliases.json
+ * {
+ *   "version": 1,
+ *   "seasons": { "202610": { "<showId>": ["D盘备份资料"] } }
+ * }
+ */
+const ALIAS_FILE = 'aliases.json';
+
+function aliasesPath(userData) {
+  return path.join(userData, ALIAS_FILE);
+}
+
+function emptyAliases() {
+  return { version: VERSION, seasons: {} };
+}
+
+function readAliases(userData) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(aliasesPath(userData), 'utf8'));
+    const out = emptyAliases();
+    if (!raw || typeof raw !== 'object' || !raw.seasons || typeof raw.seasons !== 'object') {
+      return out;
+    }
+    for (const [season, bucket] of Object.entries(raw.seasons)) {
+      if (!SEASON_RE.test(season) || !bucket || typeof bucket !== 'object') continue;
+      const clean = {};
+      for (const [id, list] of Object.entries(bucket)) {
+        if (!ID_RE.test(id) || !Array.isArray(list)) continue;
+        const names = [...new Set(list.map((s) => String(s || '').trim()).filter(Boolean))].slice(0, 40);
+        if (names.length) clean[id] = names;
+      }
+      out.seasons[season] = clean;
+    }
+    return out;
+  } catch {
+    return emptyAliases();
+  }
+}
+
+/** 给扫描器用的 Map：showId -> [别名...] */
+function aliasMap(userData, season) {
+  assertSeason(season);
+  const bucket = readAliases(userData).seasons[season] || {};
+  return new Map(Object.entries(bucket));
+}
+
+function addAlias(userData, season, showId, alias) {
+  season = String(season);
+  showId = String(showId);
+  assertSeason(season);
+  assertId(showId);
+  const name = String(alias || '').trim();
+  if (!name) throw new Error('别名不能为空');
+
+  const db = readAliases(userData);
+  if (!db.seasons[season]) db.seasons[season] = {};
+  const list = db.seasons[season][showId] || [];
+  if (!list.includes(name)) list.unshift(name);
+  db.seasons[season][showId] = list.slice(0, 40);
+
+  const file = aliasesPath(userData);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+  return db.seasons[season][showId];
+}
+
 module.exports = {
   VERSION,
   FILE_NAME,
@@ -142,4 +215,7 @@ module.exports = {
   writeLibrary,
   ownedIds,
   setOwned,
+  readAliases,
+  aliasMap,
+  addAlias,
 };

@@ -7,13 +7,14 @@
  * 界面的东西一律交给 src/renderer/，两边只通过 IPC 说话。
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const catalog = require('./catalog');
 const library = require('./library');
+const scanner = require('./scanner');
 
 // 启动探针：把关键节点写进 .dev/boot.log。
 // 这台机器上 Electron 有时会在「还没跑到 js」的阶段就没了，靠这个日志判断死在哪一步。
@@ -200,6 +201,154 @@ ipcMain.handle('library:toggle', (_event, payload = {}) => {
     return { ok: true, ...result };
   } catch (err) {
     console.error('[library] 写入失败', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+// ---------------------------------------------------------------- 扫资源目录
+
+/** 把扫描结果里能省掉的字段去掉，别让几百条路径把 IPC 撑爆 */
+function slimScan(scan) {
+  if (!scan) return null;
+  const strip = (list) =>
+    (list || []).map((f) => ({
+      path: f.path,
+      name: f.name,
+      dir: f.dir,
+      size: f.size,
+      ext: f.ext,
+      episode: f.episode,
+      kind: f.kind,
+      range: f.range,
+      showId: f.showId,
+      showTitle: f.showTitle,
+      score: f.score,
+      matchedBy: f.matchedBy,
+    }));
+  return {
+    root: scan.root,
+    season: scan.season,
+    scannedAt: scan.scannedAt,
+    files: scan.files,
+    matched: strip(scan.matched),
+    unmatched: strip(scan.unmatched),
+    extras: strip(scan.extras),
+    errors: scan.errors,
+    truncated: scan.truncated,
+    tookMs: scan.tookMs,
+  };
+}
+
+/** 弹系统对话框选资源目录 */
+ipcMain.handle('scan:pick', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: '选择动画资源存放的目录',
+    buttonLabel: '就这里',
+    properties: ['openDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) return { ok: true, canceled: true };
+  console.log('[scan] 选的目录:', res.filePaths[0]);
+  return { ok: true, dir: res.filePaths[0] };
+});
+
+/** 上次的扫描结果（开机恢复用） */
+ipcMain.handle('scan:state', () => {
+  const scan = scanner.loadScan(app.getPath('userData'));
+  return { ok: true, scan: slimScan(scan) };
+});
+
+/**
+ * 开扫：先拿当季番剧表（有缓存就用缓存），再递归扫目录，边扫边把进度推给界面。
+ * 结果存 userData\scan.json，下次打开不用重扫。
+ */
+ipcMain.handle('scan:run', async (event, payload = {}) => {
+  const userData = app.getPath('userData');
+  const previous = scanner.loadScan(userData);
+  const season = /^\d{6}$/.test(payload.season || '') ? payload.season : catalog.currentSeason();
+  const root = payload.root || (previous && previous.root);
+  if (!root) return { ok: false, error: '还没选目录' };
+
+  const sender = event.sender;
+  let lastPush = 0;
+  try {
+    const data = await catalog.loadSeason(userData, season, {
+      force: false,
+      log: (msg) => console.log('[catalog]', msg),
+    });
+    const aliases = library.aliasMap(userData, season);
+    const result = await scanner.scanDirectory({
+      root,
+      shows: data.entries,
+      aliasMap: aliases,
+      onProgress: ({ found, dir }) => {
+        const now = Date.now();
+        if (now - lastPush < 250) return; // 别刷太勤，界面会抖
+        lastPush = now;
+        if (!sender.isDestroyed()) sender.send('scan:progress', { found, dir });
+      },
+    });
+    result.season = season;
+    scanner.saveScan(userData, result);
+    console.log(
+      `[scan] ${root} → ${result.files} 个视频，认出 ${result.matched.length}，待确认 ${result.unmatched.length}，非正片 ${result.extras.length}，${result.tookMs}ms`
+    );
+    return { ok: true, scan: slimScan(result) };
+  } catch (err) {
+    console.error('[scan] 失败', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+/** 手动指派：把待确认的文件塞给某部动画，顺便记住认人的文件夹名 */
+ipcMain.handle('scan:assign', (_event, payload = {}) => {
+  const userData = app.getPath('userData');
+  try {
+    const scan = scanner.loadScan(userData);
+    if (!scan) return { ok: false, error: '还没有扫描结果' };
+
+    const target = [...(scan.unmatched || []), ...(scan.matched || [])].find(
+      (f) => f.path === payload.path
+    );
+    if (!target) return { ok: false, error: '找不到这个文件，可能重新扫过了' };
+
+    const showId = String(payload.showId || '');
+    const showTitle = String(payload.showTitle || '');
+    const episode =
+      payload.episode === null || payload.episode === undefined
+        ? target.episode
+        : Number(payload.episode);
+    if (!showId) return { ok: false, error: '没指定是哪部动画' };
+    if (!Number.isInteger(episode) || episode === null) {
+      return { ok: false, error: '这个文件里认不出集数，手动填一个吧' };
+    }
+
+    scan.unmatched = (scan.unmatched || []).filter((f) => f.path !== target.path);
+    scan.matched = scan.matched || [];
+
+    const assigned = {
+      ...target,
+      showId,
+      showTitle,
+      episode,
+      kind: 'main',
+      score: 1,
+      matchedBy: '手动',
+    };
+    const dup = scan.matched.findIndex((f) => f.path === assigned.path);
+    if (dup >= 0) scan.matched[dup] = assigned;
+    else scan.matched.push(assigned);
+    scan.matched.sort((a, b) => (a.episode || 0) - (b.episode || 0) || a.path.localeCompare(b.path));
+
+    // 记住文件夹名，下次自动认
+    const folderName = path.basename(target.dir || '');
+    const season = scan.season || catalog.currentSeason();
+    if (folderName) library.addAlias(userData, season, showId, folderName);
+
+    scanner.saveScan(userData, scan);
+    console.log(`[scan] 手动指派 ${assigned.name} → ${showTitle} 第 ${episode} 集`);
+    return { ok: true, scan: slimScan(scan) };
+  } catch (err) {
+    console.error('[scan] 指派失败', err);
     return { ok: false, error: err && err.message ? err.message : String(err) };
   }
 });

@@ -24,4 +24,26 @@ contextBridge.exposeInMainWorld('api', {
    * @param {{season?: string, id: string, owned: boolean}} payload
    */
   toggleOwned: (payload) => ipcRenderer.invoke('library:toggle', payload),
+
+  /** 弹系统对话框，让用户选资源目录 */
+  pickScanDir: () => ipcRenderer.invoke('scan:pick'),
+
+  /** 开扫：扫完返回结果；扫的过程中会通过 onScanProgress 推进度 */
+  runScan: (payload = {}) => ipcRenderer.invoke('scan:run', payload),
+
+  /** 上次的扫描结果 */
+  getScanState: () => ipcRenderer.invoke('scan:state'),
+
+  /** 手动把某个文件指派给某部动画 */
+  assignFile: (payload) => ipcRenderer.invoke('scan:assign', payload),
+
+  /**
+   * 订阅扫描进度。返回取消订阅的函数（页面卸载时调一下）。
+   * 这是 IPC 的第三种姿势：主进程主动 push，不是渲染进程问一次答一次。
+   */
+  onScanProgress: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('scan:progress', handler);
+    return () => ipcRenderer.removeListener('scan:progress', handler);
+  },
 });
