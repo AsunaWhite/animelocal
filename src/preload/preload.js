@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld('api', {
   forgetAliases: () => ipcRenderer.invoke('scan:forget'),
 
   /**
+   * 播放某一集：主进程校验路径后交给系统默认播放器。
+   * 传的是扫描结果里的绝对路径，主进程会再核一遍（只认扫描过的文件）。
+   * @param {{path: string}} payload
+   */
+  playFile: (payload) => ipcRenderer.invoke('play:file', payload),
+
+  /**
    * 订阅扫描进度。返回取消订阅的函数（页面卸载时调一下）。
    * 这是 IPC 的第三种姿势：主进程主动 push，不是渲染进程问一次答一次。
    */

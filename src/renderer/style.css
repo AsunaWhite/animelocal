@@ -821,6 +821,65 @@ body {
   border-radius: 11px;
 }
 
+/* 阶段 4：每行就是一集，点一下用默认播放器打开 */
+.ep-row.is-playable {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .14s ease, background .14s ease, transform .14s ease;
+}
+
+.ep-row.is-playable:hover {
+  border-color: var(--accent);
+  background: #1d2230;
+  transform: translateX(2px);
+}
+
+.ep-row.is-playable:active {
+  transform: translateX(2px) scale(.995);
+}
+
+.ep-row.is-loading {
+  opacity: .6;
+  cursor: progress;
+}
+
+.ep-row.is-error {
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, .08);
+}
+
+.ep-row.is-last {
+  border-color: var(--accent);
+  background: rgba(124, 156, 255, .1);
+}
+
+.ep-play {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--text-mute);
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+
+.ep-row.is-playable:hover .ep-play {
+  color: #0f1116;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ep-row.is-last .ep-play {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .ep-no {
   flex: none;
   min-width: 44px;

@@ -7,7 +7,7 @@
  * 界面的东西一律交给 src/renderer/，两边只通过 IPC 说话。
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -15,6 +15,7 @@ const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog');
 const library = require('./library');
 const scanner = require('./scanner');
+const player = require('./player');
 
 // 启动探针：把关键节点写进 .dev/boot.log。
 // 这台机器上 Electron 有时会在「还没跑到 js」的阶段就没了，靠这个日志判断死在哪一步。
@@ -366,6 +367,34 @@ ipcMain.handle('scan:forget', () => {
     console.log(`[scan] 清空识别记忆 ${season}：${removed} 条`);
     return { ok: true, removed, season };
   } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+/** 阶段 4：把某一集交给系统默认播放器（你机器上是 PotPlayer） */
+ipcMain.handle('play:file', async (_event, payload = {}) => {
+  const userData = app.getPath('userData');
+  const scan = scanner.loadScan(userData);
+  const verdict = player.checkPlayable(scan, payload.path);
+  if (!verdict.ok) return verdict;
+
+  // 调试/截图时不想真的弹播放器：设 ANIMELOCAL_DRY_PLAY=1 就只走校验
+  if (process.env.ANIMELOCAL_DRY_PLAY === '1') {
+    console.log(`[play] (dry) ${verdict.file}`);
+    return { ...verdict, dry: true };
+  }
+
+  try {
+    // openPath 用的就是系统默认关联，等价于资源管理器里双击
+    const errText = await shell.openPath(verdict.file);
+    if (errText) {
+      console.error(`[play] 打不开 ${verdict.file}: ${errText}`);
+      return { ok: false, error: errText };
+    }
+    console.log(`[play] ${verdict.showTitle || ''} 第 ${verdict.episode} 集 → ${verdict.name}`);
+    return verdict;
+  } catch (err) {
+    console.error('[play] 失败', err);
     return { ok: false, error: err && err.message ? err.message : String(err) };
   }
 });

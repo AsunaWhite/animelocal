@@ -24,6 +24,7 @@ src/
   main/romaji.js      用日文原名去 AniList 换罗马音别名（纯 Node，可单独测试）
   main/library.js     勾选记录 + 别名记忆，原子写 JSON（纯 Node，可单独测试）
   main/scanner.js     扫本地目录、认作品、抠集数（纯 Node，可单独测试）
+  main/player.js      播放前的路径校验（纯 Node，可单独测试）
   preload/preload.js  桥：只把白名单能力暴露给界面
   renderer/           界面：HTML + CSS + 原生 JS，没有框架、没有打包
     index.html
@@ -35,6 +36,7 @@ scripts/
   test-romaji.js      别名匹配测试（假请求，不联网）
   test-library.js     勾选记录测试
   test-scanner.js     集数识别 + 标题匹配 + 真扫目录测试
+  test-play.js        播放路径校验测试
 test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（对答案基准）
 ```
 
@@ -65,6 +67,15 @@ test/fixtures/        202610 季度页快照 + 旧 Python 版的解析结果（�
 4. **认不出的不猜**：进「待确认」，你手动指定是哪部第几集；指完会记住那个文件夹名，下次自动认。
 5. 同一个文件夹名只比一次（几百个文件通常只落在几十个文件夹里），所以几千个文件也是秒级。
 
+## 播放怎么做的
+
+点封面下的「N 集」打开抽屉，抽屉里每一集都是一个按钮，点一下交给**系统默认播放器**（你机器上是 PotPlayer）—— 等价于在资源管理器里双击那个文件。
+
+- 主进程用 `shell.openPath(file)`，走的是 Windows 的文件关联，不写死播放器路径
+- 渲染进程只传路径，**主进程会再核一遍**：必须在上次扫描结果里、必须在资源目录内（挡 `..` 逃逸）、扩展名得是视频、文件得存在且不是空文件 —— 免得界面被注入之后能随便打开任意程序
+- 打不开发出错提示；最近播过的那一集在抽屉里高亮
+- 想验证又不真的弹播放器：设 `ANIMELOCAL_DRY_PLAY=1`，只走校验和日志
+
 ## 调试小工具
 
 截图模式可以顺带验证交互，改完界面不用手动点：
@@ -81,6 +92,10 @@ node scripts/launch.js --shot "--eval=window.__app.scanNow('D:\\Anime')"
 
 # 切到待确认视图
 node scripts/launch.js --shot "--eval=window.__app.setFilter('pending')"
+
+# 抽屉里点第一集（配合 DRY_PLAY 不会真开播放器）
+$env:ANIMELOCAL_DRY_PLAY='1'
+node scripts/launch.js --shot "--eval-file=.dev/play-dry.js"
 ```
 
 `window.__app` 是 `app.js` 末尾挂出来的调试入口，只在界面里存在，不影响正常使用。
@@ -99,6 +114,6 @@ node scripts/launch.js --shot "--eval=window.__app.setFilter('pending')"
 - [x] 阶段 1 · 数据源：抓取当季新番 + 封面缓存 + 卡片墙
 - [x] 阶段 2 · 勾选「我有这部」+ 持久化到 library.json
 - [x] 阶段 3 · 扫资源目录 + 集数识别 + 待确认 + 别名记忆
-- [ ] 阶段 4 · 调用默认播放器
+- [x] 阶段 4 · 点集数用默认播放器播放
 - [ ] 阶段 5 · 每集吐槽区
 - [ ] 阶段 6 · 打包 exe

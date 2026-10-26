@@ -19,6 +19,8 @@ const state = {
   loading: false,
   scan: null, // 上次扫描结果：{root, matched, unmatched, extras, scannedAt}
   scanning: false,
+  playing: null, // 正在打开的那一集（防连点）
+  lastPlayed: null, // 最近播过的那一集路径
 };
 
 /** 当前季度：1/4/7/10 月各一档，跟 yuc.wiki 的季度号一致（如 202610） */
@@ -259,9 +261,11 @@ function openDrawer(entry) {
   const list = document.createElement('div');
   list.className = 'ep-list';
   for (const f of eps) {
-    const row = document.createElement('div');
-    row.className = 'ep-row';
-    row.title = f.path;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'ep-row is-playable';
+    row.title = `${f.path}\n点一下就交给默认播放器`;
+    if (state.lastPlayed === f.path) row.classList.add('is-last');
 
     const no = document.createElement('span');
     no.className = 'ep-no';
@@ -277,17 +281,48 @@ function openDrawer(entry) {
     meta.textContent = `${fmtSize(f.size)} · 靠${f.matchedBy}认出`;
     info.append(name, meta);
 
-    row.append(no, info);
+    const play = document.createElement('span');
+    play.className = 'ep-play';
+    play.textContent = '▶';
+
+    row.append(no, info, play);
+    row.addEventListener('click', () => playEpisode(f, row));
     list.appendChild(row);
   }
   body.appendChild(list);
 
   const tip = document.createElement('p');
   tip.className = 'drawer-tip';
-  tip.textContent = '下一阶段（阶段 4）这几行就会变成播放按钮，点了直接用 PotPlayer 打开。';
+  tip.textContent = '点任意一集，直接交给系统默认播放器打开 —— 就是双击视频文件时用的那个。';
   body.appendChild(tip);
 
   $('#drawer').hidden = false;
+}
+
+/** 点一集 → 交给默认播放器 */
+async function playEpisode(file, row) {
+  if (state.playing === file.path) return;
+  state.playing = file.path;
+  row.classList.add('is-loading');
+  try {
+    const res = await window.api.playFile({ path: file.path });
+    if (!res || !res.ok) {
+      const msg = (res && res.error) || '未知错误';
+      setStatus(`打不开这一集：${msg}`);
+      row.classList.add('is-error');
+      setTimeout(() => row.classList.remove('is-error'), 2400);
+      return;
+    }
+    state.lastPlayed = file.path;
+    for (const el of document.querySelectorAll('.ep-row.is-last')) el.classList.remove('is-last');
+    row.classList.add('is-last');
+    setStatus(`已交给默认播放器：${file.name}${res.dry ? '（试运行，没真打开）' : ''}`);
+  } catch (err) {
+    setStatus(`打不开这一集：${err && err.message ? err.message : err}`);
+  } finally {
+    state.playing = null;
+    row.classList.remove('is-loading');
+  }
 }
 
 function closeDrawer() {
