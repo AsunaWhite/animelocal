@@ -332,23 +332,22 @@ function openDrawer(entry) {
 
   const tip = document.createElement('p');
   tip.className = 'drawer-tip';
-  tip.textContent = '这里能看到每一集的文件名和大小，点 ✎ 给单集写吐槽。想直接播，回卡片上点封面下面的集数就行。';
+  tip.textContent = '点某一集，就能给它打分、写吐槽；写过的会显示在这行下面。想播的话，点卡片封面下面对应那集的数字。';
   body.appendChild(tip);
 
   $('#drawer').hidden = false;
 }
 
-/** 一集 = 可点的行 + 可展开的吐槽区 */
+/** 一集 = 可点的行（点开就写吐槽）+ 可展开的吐槽区。播放只在卡片上做 */
 function buildEpisodeItem(file, entry) {
   const item = document.createElement('div');
   item.className = 'ep-item';
 
   const row = document.createElement('div');
-  row.className = 'ep-row is-playable';
+  row.className = 'ep-row';
   row.tabIndex = 0;
   row.setAttribute('role', 'button');
-  row.title = `${file.path}\n点一下就交给默认播放器`;
-  if (state.lastPlayed === file.path) row.classList.add('is-last');
+  row.title = `${file.path}\n点一下写这一集的吐槽`;
   if (file.note && file.note.playedAt) row.classList.add('is-watched');
 
   const no = document.createElement('span');
@@ -375,24 +374,20 @@ function buildEpisodeItem(file, entry) {
   noteBtn.textContent = '✎';
   noteBtn.title = '给这一集写吐槽';
 
-  const play = document.createElement('span');
-  play.className = 'ep-play';
-  play.textContent = '▶';
-
-  row.append(no, info, noteBtn, play);
+  row.append(no, info, noteBtn);
   row.dataset.key = file.path;
-  row.addEventListener('click', () => playEpisode(file, row));
+
+  const toggle = () => toggleNoteEditor(item, file, entry, noteBtn);
+  row.addEventListener('click', toggle);
   row.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
-      playEpisode(file, row);
+      toggle();
     }
   });
-
-  // 点 ✎ 只开吐槽区，不触发播放
   noteBtn.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    toggleNoteEditor(item, file, entry, noteBtn);
+    toggle();
   });
 
   item.append(row);
@@ -475,7 +470,7 @@ function buildNoteEditor(file, entry, item, noteBtn) {
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-ghost btn-small';
-  del.textContent = '清空';
+  del.textContent = '删除这条';
   del.disabled = !file.note;
   del.addEventListener('click', () => removeNote(file, entry, item, noteBtn));
 
@@ -539,6 +534,8 @@ async function submitNote(file, entry, item, noteBtn, textEl, rating, saveBtn, h
 
 async function removeNote(file, entry, item, noteBtn) {
   if (!file.note || !file.noteKey) return;
+  const yes = window.confirm(`删掉 ${fmtEpisode(file)} 这集的吐槽？删了就找不回来了。`);
+  if (!yes) return;
   try {
     const res = await window.api.deleteNote({ key: file.noteKey });
     if (!res || !res.ok) {
@@ -681,7 +678,7 @@ function renderNotes() {
     title.type = 'button';
     title.className = 'note-title';
     title.textContent = note.showTitle || '（未命名）';
-    title.title = '打开这部动画的集数列表';
+    title.title = '打开这部动画的集数列表，改这一集的吐槽';
     title.addEventListener('click', () => {
       const entry = state.entries.find((e) => e.id === note.showId);
       if (entry && episodesOf(entry.id).length) openDrawer(entry);
@@ -696,7 +693,33 @@ function renderNotes() {
     when.className = 'note-when';
     when.textContent = fmtTime(new Date(note.updatedAt || note.createdAt).toISOString());
 
-    head.append(ep, title, stars, when);
+    // 每条都能单独删掉（删了就是删了，问一句再动手）
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'note-del';
+    del.textContent = '删除';
+    del.title = '删掉这条吐槽';
+    del.addEventListener('click', async () => {
+      const label = `${note.showTitle || '这部'} ${note.episode == null ? '' : `第 ${note.episode} 集`}`.trim();
+      if (!window.confirm(`删掉「${label}」的吐槽？删了就找不回来了。`)) return;
+      del.disabled = true;
+      try {
+        const res = await window.api.deleteNote({ key: note.key });
+        if (!res || !res.ok) {
+          setStatus(`删不掉：${(res && res.error) || '未知错误'}`);
+          del.disabled = false;
+          return;
+        }
+        setStatus(`已删除「${label}」的吐槽`);
+        await refreshNotes();
+        renderNotes();
+      } catch (err) {
+        setStatus(`删不掉：${err && err.message ? err.message : err}`);
+        del.disabled = false;
+      }
+    });
+
+    head.append(ep, title, stars, when, del);
 
     const text = document.createElement('p');
     text.className = 'note-text';

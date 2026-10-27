@@ -972,19 +972,6 @@ body {
   background: #f3f7ff;
 }
 
-.ep-row.is-loading {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.ep-row.is-error {
-  background: #fdecec;
-}
-
-.ep-row.is-last {
-  background: var(--accent-soft);
-}
-
 .ep-no {
   flex: none;
   width: 30px;
@@ -1053,25 +1040,6 @@ body {
 .ep-note-btn.is-active {
   background: var(--pink-soft);
   color: var(--pink);
-}
-
-.ep-play {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  color: var(--accent);
-  font-size: 10px;
-  transition: background 0.13s, border-color 0.13s, color 0.13s;
-}
-
-.ep-row:hover .ep-play {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 /* 吐槽编辑区 */
@@ -1286,6 +1254,31 @@ body {
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.note-del {
+  appearance: none;
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.13s, border-color 0.13s, background 0.13s;
+}
+
+.note-del:hover {
+  color: #d92d20;
+  border-color: #f3c0bb;
+  background: #fff5f4;
+}
+
+.note-del:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .note-text {
