@@ -129,6 +129,27 @@ node scripts/launch.js --shot "--eval-file=.dev/play-dry.js"
 
 `window.__app` 是 `app.js` 末尾挂出来的调试入口，只在界面里存在，不影响正常使用。
 
+v0.2 之后卡片上直接有集数按钮，这两个更常用：
+
+```powershell
+# 点卡片上第一集的集数按钮（配合 DRY_PLAY 不会真开播放器）
+$env:ANIMELOCAL_DRY_PLAY='1'
+node scripts/launch.js --shot "--eval=document.querySelector('.card.has-files .ep-chip').click()"
+
+# 从卡片上的 ✎ 打开抽屉
+node scripts/launch.js --shot "--eval=document.querySelector('.card.has-files .ep-note-entry').click()"
+```
+
+## 界面（v0.2 美化版）
+
+参考 `yuc/2026年10月新番_封面一览.html` 的版式重做，白色基底：
+
+- **按周几分组**：周一…周日各一段，左边一根蓝竖条做标题，标题旁是册数和「今天」标记；「网络放送 & 其他」排最后
+- **封面下直接是集数**：扫到几集就排几个小按钮（`04` `05` …），点一下就用默认播放器播，不再跳抽屉；超过 14 集的收进 `+N`
+- 集数按钮的状态：播过 = 绿底，刚播的那一集 = 蓝框，打不开 = 闪红
+- 集数条末尾的 `✎` 才进抽屉（看文件名/大小、写单集吐槽）
+- 「全部 / 本地有 / 我有的 / 待确认」四个分段；统计口径变成「共 72 部 · 本地有 5 部 · 已标记 2 部」
+
 ## 踩过的坑
 
 - **工程不能放在 DSH 工作区目录里**：`electron.exe` 只要位于 `...\deepseek-harness\default-workspace\` 内部，启动就 100ms 内静默退出（`crashpad_client_win.cc not connected`），跟路径长度、`node_modules`、参数都无关。搬到 `C:\Users\AsunaWhite\Projects\` 之后一切正常。
@@ -146,3 +167,4 @@ node scripts/launch.js --shot "--eval-file=.dev/play-dry.js"
 - [x] 阶段 4 · 点集数用默认播放器播放
 - [x] 阶段 5 · 每集吐槽区 + 吐槽记录页
 - [x] 阶段 6 · 打包 exe（portable 单文件 + win-unpacked 免安装版）
+- [x] v0.2 · 美化：白色基底 + 按周几分组 + 封面下直接排集数、点了就播

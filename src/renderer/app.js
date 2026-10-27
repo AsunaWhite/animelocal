@@ -166,25 +166,78 @@ function buildCard(entry) {
   }
   if (chips.childNodes.length) body.appendChild(chips);
 
-  // 本地扫到几集？扫到了就给个「N 集」的入口
+  // 本地扫到几集，就在封面下直接排几个集数按钮 —— 点一下就用默认播放器播
   const eps = episodesOf(entry.id);
-  if (eps.length) {
-    card.classList.add('has-files');
-    const epBadge = document.createElement('button');
-    epBadge.type = 'button';
-    epBadge.className = 'ep-badge';
-    epBadge.textContent = `${eps.length} 集`;
-    epBadge.title = `本地认出 ${eps.length} 集，点开看是哪些文件`;
-    epBadge.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openDrawer(entry);
-    });
-    body.appendChild(epBadge);
-  }
+  if (eps.length) card.classList.add('has-files');
+  body.appendChild(buildEpStrip(entry, eps));
 
   card.append(coverBox, body);
   if (entry.noteCount) paintNoteBadge(card, entry.noteCount);
   return card;
+}
+
+/**
+ * 封面下那一排集数按钮。
+ * 按集数升序排；播过的变绿；超过 MAX_CHIPS 收进抽屉（卡片不无限长）。
+ */
+function buildEpStrip(entry, eps) {
+  const strip = document.createElement('div');
+  strip.className = 'ep-strip';
+
+  if (!eps.length) {
+    const empty = document.createElement('span');
+    empty.className = 'ep-empty';
+    empty.textContent = '本地还没扫到文件';
+    strip.appendChild(empty);
+    return strip;
+  }
+
+  for (const f of eps.slice(0, MAX_CHIPS)) {
+    strip.appendChild(buildEpChip(entry, f));
+  }
+
+  if (eps.length > MAX_CHIPS) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'ep-chip ep-more';
+    more.textContent = `+${eps.length - MAX_CHIPS}`;
+    more.title = '还有这么多集，点开看全部';
+    more.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openDrawer(entry);
+    });
+    strip.appendChild(more);
+  }
+
+  // 写吐槽 / 看文件名的入口（播放不用它，播放直接点集数）
+  const noteEntry = document.createElement('button');
+  noteEntry.type = 'button';
+  noteEntry.className = 'ep-note-entry';
+  noteEntry.textContent = '✎';
+  noteEntry.title = `看这 ${eps.length} 集的详情、给单集写吐槽`;
+  noteEntry.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openDrawer(entry);
+  });
+  strip.appendChild(noteEntry);
+
+  return strip;
+}
+
+function buildEpChip(entry, file) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'ep-chip';
+  chip.textContent = fmtEpisode(file);
+  chip.title = `${file.name}\n${fmtSize(file.size)} · 点一下用默认播放器打开`;
+  chip.dataset.path = file.path;
+  if (file.note && file.note.playedAt) chip.classList.add('is-watched');
+  if (state.lastPlayed === file.path) chip.classList.add('is-last');
+  chip.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    playEpisode(file, chip);
+  });
+  return chip;
 }
 
 /** 把一张卡的「已标记」外观刷成 owned 的样子（建卡时和保存失败回滚时都用它） */
@@ -240,11 +293,20 @@ function fmtSize(bytes) {
   return i === 0 ? `${Math.round(n)} ${units[i]}` : `${n.toFixed(1)} ${units[i]}`;
 }
 
-/** 某个动画 id 在本地扫到的集数 */
+/** 某个动画 id 在本地扫到的集数，按集数从小到大排 */
 function episodesOf(showId) {
   if (!state.scan || !Array.isArray(state.scan.matched)) return [];
-  return state.scan.matched.filter((f) => f.showId === showId);
+  const list = state.scan.matched.filter((f) => f.showId === showId);
+  return list.sort((a, b) => {
+    const ea = a.episode === null || a.episode === undefined ? Number.MAX_SAFE_INTEGER : a.episode;
+    const eb = b.episode === null || b.episode === undefined ? Number.MAX_SAFE_INTEGER : b.episode;
+    if (ea !== eb) return ea - eb;
+    return String(a.name).localeCompare(String(b.name), 'zh');
+  });
 }
+
+/** 卡片上最多直接排多少个集数按钮，多出来的收进抽屉 */
+const MAX_CHIPS = 14;
 
 function fmtEpisode(f) {
   if (f.range) return `${f.range[0]}-${f.range[1]}`;
@@ -270,7 +332,7 @@ function openDrawer(entry) {
 
   const tip = document.createElement('p');
   tip.className = 'drawer-tip';
-  tip.textContent = '点一集直接用默认播放器打开（就是双击视频文件的播放器）；点右边的 ✎ 写这一集的吐槽。';
+  tip.textContent = '这里能看到每一集的文件名和大小，点 ✎ 给单集写吐槽。想直接播，回卡片上点封面下面的集数就行。';
   body.appendChild(tip);
 
   $('#drawer').hidden = false;
@@ -318,11 +380,12 @@ function buildEpisodeItem(file, entry) {
   play.textContent = '▶';
 
   row.append(no, info, noteBtn, play);
-  row.addEventListener('click', () => playEpisode(file, row, noteBtn));
+  row.dataset.key = file.path;
+  row.addEventListener('click', () => playEpisode(file, row));
   row.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
-      playEpisode(file, row, noteBtn);
+      playEpisode(file, row);
     }
   });
 
@@ -494,27 +557,38 @@ async function removeNote(file, entry, item, noteBtn) {
   }
 }
 
-/** 点一集 → 交给默认播放器 */
-async function playEpisode(file, row, noteBtn) {
+/** 点一集（卡片上的集数按钮，或抽屉里的行）→ 交给默认播放器 */
+async function playEpisode(file, el) {
   if (state.playing === file.path) return;
   state.playing = file.path;
-  row.classList.add('is-loading');
+  el.classList.add('is-loading');
   try {
     const res = await window.api.playFile({ path: file.path });
     if (!res || !res.ok) {
       const msg = (res && res.error) || '未知错误';
       setStatus(`打不开这一集：${msg}`);
-      row.classList.add('is-error');
-      setTimeout(() => row.classList.remove('is-error'), 2400);
+      el.classList.add('is-error');
+      setTimeout(() => el.classList.remove('is-error'), 2400);
       return;
     }
     state.lastPlayed = file.path;
-    for (const el of document.querySelectorAll('.ep-row.is-last')) el.classList.remove('is-last');
-    row.classList.add('is-last');
+    for (const other of document.querySelectorAll('.is-last')) other.classList.remove('is-last');
+    el.classList.add('is-last');
     if (!res.dry) {
-      row.classList.add('is-watched');
-      file.note = { ...(file.note || {}), playedAt: Date.now(), text: file.note ? file.note.text || '' : '', rating: file.note ? file.note.rating || 0 : 0 };
-      paintNotePreview(row.querySelector('.ep-note-preview'), file.note);
+      file.note = {
+        ...(file.note || {}),
+        playedAt: Date.now(),
+        text: file.note ? file.note.text || '' : '',
+        rating: file.note ? file.note.rating || 0 : 0,
+      };
+      // 同一集可能同时出现在卡片集数条和抽屉里，两处一起变绿
+      for (const other of document.querySelectorAll('.ep-chip, .ep-row')) {
+        if (other.dataset.path === file.path || other.dataset.key === file.path) {
+          other.classList.add('is-watched');
+        }
+      }
+      el.classList.add('is-watched');
+      paintNotePreview(el.querySelector ? el.querySelector('.ep-note-preview') : null, file.note);
       await refreshNotes();
     }
     setStatus(`已交给默认播放器：${file.name}${res.dry ? '（试运行，没真打开）' : ''}`);
@@ -522,7 +596,7 @@ async function playEpisode(file, row, noteBtn) {
     setStatus(`打不开这一集：${err && err.message ? err.message : err}`);
   } finally {
     state.playing = null;
-    row.classList.remove('is-loading');
+    el.classList.remove('is-loading');
   }
 }
 
@@ -585,7 +659,7 @@ function renderNotes() {
     showState({
       emoji: '💬',
       title: '还没有吐槽',
-      desc: '回「本季新番」，点封面下的「N 集」打开抽屉，点某一集右边的 ✎ 就能写这一集的想法。',
+      desc: '回「本季新番」，点卡片封面下那一排集数右边的 ✎，就能写这一集的想法。',
     });
     return;
   }
@@ -851,14 +925,31 @@ async function assignPending(file, select, epInput, btn) {
 }
 
 /** 当前过滤条件下该显示的条目 */
-function visibleEntries() {  const kw = state.keyword.trim().toLowerCase();
+function visibleEntries() {
+  const kw = state.keyword.trim().toLowerCase();
   return state.entries.filter((e) => {
     if (state.filter === 'owned' && !e.owned) return false;
+    if (state.filter === 'local' && !episodesOf(e.id).length) return false;
     if (!kw) return true;
     return (
       e.title.toLowerCase().includes(kw) || (e.section || '').toLowerCase().includes(kw)
     );
   });
+}
+
+/** 周几的自然顺序；「网络放送 & 其他」这类排在最后 */
+const DAY_ORDER = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function sectionRank(section) {
+  const s = String(section || '');
+  const i = DAY_ORDER.findIndex((d) => s.startsWith(d));
+  return i === -1 ? 99 : i;
+}
+
+/** 今天周几，用来在对应分组上打「今天」的标记 */
+function todaySection() {
+  const i = new Date().getDay(); // 0 = 周日
+  return DAY_ORDER[(i + 6) % 7];
 }
 
 function updateCount() {
@@ -877,15 +968,18 @@ function updateCount() {
   state.ownedCount = owned;
   const shown = visibleEntries().length;
   const kw = state.keyword.trim();
+  const localCount = state.entries.filter((e) => episodesOf(e.id).length).length;
 
   let text;
   if (state.filter === 'owned') {
     text = owned ? `我有的 ${owned} 部` : '还没标记任何一部';
-    if (kw) text += ` · 搜出 ${shown} 部`;
+  } else if (state.filter === 'local') {
+    text = localCount ? `本地有 ${localCount} 部` : '还没扫到任何一集';
   } else {
-    text = `共 ${total} 部 · 已标记 ${owned} 部`;
-    if (kw) text += ` · 搜出 ${shown} 部`;
+    text = `共 ${total} 部 · 本地有 ${localCount} 部 · 已标记 ${owned} 部`;
   }
+  if (kw && state.filter !== 'owned' && state.filter !== 'local') text += ` · 搜出 ${shown} 部`;
+  if (kw && state.filter !== 'all') text += ` · 搜出 ${shown} 部`;
   $('#count').textContent = text;
 }
 
@@ -906,8 +1000,54 @@ function renderCards() {
   $('#pending').hidden = true;
   $('#notes').hidden = true;
   grid.innerHTML = '';
+
+  // 按周几分组：周一到周日在前面，网络放送/其他排最后
+  const groups = new Map();
+  for (const entry of list) {
+    const key = entry.section || '其他';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  const ordered = [...groups.entries()].sort((a, b) => sectionRank(a[0]) - sectionRank(b[0]));
+
+  const today = todaySection();
   const frag = document.createDocumentFragment();
-  for (const entry of list) frag.appendChild(buildCard(entry));
+  for (const [section, items] of ordered) {
+    const block = document.createElement('section');
+    block.className = 'day-section';
+
+    // 「周一 (月)」拆成「周一」+ 淡色的「(月)」
+    const m = /^(周[一二三四五六日])\s*(.*)$/.exec(section);
+    const head = document.createElement('h2');
+    head.className = 'day-head';
+    const main = document.createElement('span');
+    main.textContent = m ? m[1] : section;
+    head.appendChild(main);
+    if (m && m[2]) {
+      const cn = document.createElement('span');
+      cn.className = 'day-cn';
+      cn.textContent = m[2];
+      head.appendChild(cn);
+    }
+    if (section.startsWith(today)) {
+      const badge = document.createElement('span');
+      badge.className = 'day-today';
+      badge.textContent = '今天';
+      head.appendChild(badge);
+    }
+    const count = document.createElement('span');
+    count.className = 'day-count';
+    count.textContent = `${items.length} 部`;
+    head.appendChild(count);
+
+    const dayGrid = document.createElement('div');
+    dayGrid.className = 'day-grid';
+    for (const entry of items) dayGrid.appendChild(buildCard(entry));
+
+    block.append(head, dayGrid);
+    frag.appendChild(block);
+  }
+
   grid.appendChild(frag);
   grid.hidden = false;
 
@@ -919,6 +1059,12 @@ function renderCards() {
         emoji: '📚',
         title: '还没标记任何一部',
         desc: '回「全部」页面，点卡片封面右上角的圆圈，把本地真有资源的动画标出来。标记会立刻存盘。',
+      });
+    } else if (state.filter === 'local' && !kw) {
+      showState({
+        emoji: '📂',
+        title: '本地还没扫到动画',
+        desc: '点右上角「选择资源目录」，把放动画的文件夹告诉我；扫完之后，卡片封面下会直接出现可以点的集数。',
       });
     } else {
       showState({
@@ -1038,7 +1184,7 @@ function bindEvents() {
 
 /** 切「全部 / 我有的 / 待确认 / 吐槽记录」，同时把侧栏和分段按钮的高亮对齐 */
 function setFilter(filter) {
-  state.filter = ['owned', 'pending', 'notes'].includes(filter) ? filter : 'all';
+  state.filter = ['owned', 'local', 'pending', 'notes'].includes(filter) ? filter : 'all';
   // 「吐槽记录」是整季的列表，卡片那套筛选按钮在这儿没意义
   const seg = document.querySelector('.seg');
   if (seg) seg.hidden = state.filter === 'notes';
