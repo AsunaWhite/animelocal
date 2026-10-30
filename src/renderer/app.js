@@ -22,6 +22,9 @@ const state = {
   playing: null, // 正在打开的那一集（防连点）
   lastPlayed: null, // 最近播过的那一集路径
   noteList: [], // 本季所有吐槽（吐槽记录页用）
+  fetchedAt: null, // 当前片单是什么时候抓的（季度更新日判断要用）
+  lastSeasonCheck: 0, // 上次自动检查季度的时间，防抖
+  seasonRefreshing: false, // 正在因为「更新日」重抓
 };
 
 /** 当前季度：1/4/7/10 月各一档，跟 yuc.wiki 的季度号一致（如 202610） */
@@ -1275,10 +1278,70 @@ function renderCards() {
   }
 }
 
+// ---------------------------------------------------------------- 季度更新
+
+/** 两次自动检查之间至少隔这么久，免得窗口一切走神就重抓 */
+const QUARTER_CHECK_GAP = 5 * 60 * 1000;
+
+/**
+ * 季度自检：换季了就把整页换掉；到了本季「更新日」（首月 15 号）而缓存还没跟上，
+ * 就强制重抓一次片单，抓完顺带把本地目录重扫一遍。
+ * 返回 true 表示这次确实做了点什么（换季或重抓）。
+ */
+async function maybeSeasonRefresh({ force = false } = {}) {
+  if (state.loading || state.seasonRefreshing) return false;
+  const now = Date.now();
+  if (!force && now - state.lastSeasonCheck < QUARTER_CHECK_GAP) return false;
+  state.lastSeasonCheck = now;
+
+  const s = currentSeason();
+
+  // 1) 跨季了：1/4/7/10 月 1 号零点一过，整页换新的
+  if (s.key !== state.season) {
+    state.season = s.key;
+    state.entries = [];
+    state.fetchedAt = null;
+    state.scan = null;
+    state.noteList = [];
+    $('#season-label').textContent = ` 年 ${s.month} 月新番 · ${s.label}`;
+    setStatus(`换季了，正在抓 ${s.month} 月新番…`);
+    await loadCatalog(false);
+    await refreshNotes();
+    await loadScanState();
+    toast(`换季啦：${s.year} 年 ${s.month} 月新番`, 'ok');
+    return true;
+  }
+
+  // 2) 本季更新日到了、缓存还是更新日之前的 → 强制重抓
+  const needs = SeasonUtil.needsQuarterRefresh({
+    seasonKey: state.season,
+    fetchedAt: state.fetchedAt,
+    now: new Date(),
+  });
+  if (!needs) return false;
+
+  state.seasonRefreshing = true;
+  const label = SeasonUtil.updateLabel(state.season) || '本季更新日';
+  setStatus(`本季更新日（${label}）到了，正在重新抓片单…`);
+  try {
+    const okData = await loadCatalog(true);
+    if (!okData) {
+      toast(`本季片单更新失败，先看着旧的`, 'bad');
+      return false;
+    }
+    toast(`本季片单已更新（${label}）`, 'ok');
+    // 片单更新完，顺手重扫本地目录，新下的集数自己冒出来
+    if (state.scan && state.scan.root) await scanNow(state.scan.root);
+    return true;
+  } finally {
+    state.seasonRefreshing = false;
+  }
+}
+
 // ---------------------------------------------------------------- 数据
 
 async function loadCatalog(force = false) {
-  if (state.loading) return;
+  if (state.loading) return false;
   state.loading = true;
   const btn = $('#refresh');
   btn.disabled = true;
@@ -1294,6 +1357,7 @@ async function loadCatalog(force = false) {
     state.entries = data.entries;
     state.label = data.label || '';
     state.ownedCount = data.ownedCount || 0;
+    state.fetchedAt = data.fetchedAt || null;
     renderCards();
     const covers = data.entries.filter((e) => e.coverUrl).length;
     setStatus(
@@ -1302,6 +1366,7 @@ async function loadCatalog(force = false) {
         (data.stale ? ' ⚠ 联网失败，用的是旧数据' : '')
     );
     btn.textContent = '刷新数据';
+    return true;
   } catch (err) {
     $('#grid').hidden = true;
     hideSkeleton();
@@ -1314,6 +1379,7 @@ async function loadCatalog(force = false) {
     $('#count').textContent = '读取失败';
     setStatus('数据源 yuc.wiki 不可达');
     btn.textContent = '刷新数据';
+    return false;
   } finally {
     state.loading = false;
     btn.disabled = false;
@@ -1366,6 +1432,14 @@ function bindEvents() {
 
   // 引导卡片：关掉就记住，别再弹
   $('#guide-close').addEventListener('click', markGuideDone);
+
+  // 季度自检：窗口回到前台看一眼，另外每 30 分钟看一眼（内部还有 5 分钟防抖）
+  window.addEventListener('focus', () => {
+    maybeSeasonRefresh();
+  });
+  setInterval(() => {
+    maybeSeasonRefresh();
+  }, 30 * 60 * 1000);
 
   // 滚动时高亮当前周几
   let scrollTick = 0;
@@ -1425,6 +1499,7 @@ async function boot() {
   await loadCatalog(false);
   await refreshNotes();
   await loadScanState();
+  await maybeSeasonRefresh({ force: true });
   maybeShowGuide();
 }
 
@@ -1432,4 +1507,13 @@ boot();
 
 // 调试 / 截图模式用：把内部状态和几个动作挂到 window 上，
 // 这样 `node scripts/launch.js --shot "--eval=window.__app.scanNow('D:\\anime')"` 就能驱动界面。
-window.__app = { state, renderCards, renderPending, renderScanInfo, setFilter, scanNow, openDrawer };
+window.__app = {
+  state,
+  renderCards,
+  renderPending,
+  renderScanInfo,
+  setFilter,
+  scanNow,
+  openDrawer,
+  maybeSeasonRefresh,
+};

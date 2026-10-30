@@ -1,6 +1,6 @@
 {
   "name": "animelocal",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "本季番剧库 · 本地动画管理与吐槽工具",
   "main": "src/main/main.js",
@@ -8,7 +8,7 @@
     "start": "node scripts/launch.js",
     "dev": "node scripts/launch.js --dev",
     "shot": "node scripts/launch.js --shot",
-    "test": "node scripts/test-catalog.js && node scripts/test-library.js && node scripts/test-scanner.js && node scripts/test-romaji.js && node scripts/test-play.js && node scripts/test-notes.js",
+    "test": "node scripts/test-catalog.js && node scripts/test-library.js && node scripts/test-scanner.js && node scripts/test-romaji.js && node scripts/test-play.js && node scripts/test-notes.js && node scripts/test-season.js",
     "test:catalog": "node scripts/test-catalog.js",
     "test:library": "node scripts/test-library.js",
     "test:scanner": "node scripts/test-scanner.js",
@@ -18,7 +18,8 @@
     "test:live": "node scripts/test-catalog.js --live",
     "icon": "powershell -NoProfile -ExecutionPolicy Bypass -File build/make-icon.ps1",
     "pack": "electron-builder --win --dir",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win portable",
+    "test:season": "node scripts/test-season.js"
   },
   "build": {
     "appId": "com.asunawhite.animelocal",
