@@ -73,15 +73,18 @@ let win = null;
 
 function createWindow() {
   trace('createWindow:start');
+  // 开发时窗口 / 任务栏图标跟打包版对齐（打包版的图标由 exe 自带）
+  const iconPath = path.join(DEV_ROOT, 'build', 'icon.ico');
   win = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 1000,
     minHeight: 660,
     title: '本季番剧库',
-    backgroundColor: '#0f1116',
+    backgroundColor: '#f6f7f9',
     show: false,
     autoHideMenuBar: true,
+    ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true, // 渲染进程拿不到 Node，只能走 preload 暴露的 API

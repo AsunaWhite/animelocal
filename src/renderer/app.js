@@ -49,7 +49,12 @@ function renderSkeleton(n = 12) {
   for (let i = 0; i < n; i++) {
     const card = document.createElement('div');
     card.className = 'sk-card';
-    card.innerHTML = '<div class="sk-cover"></div><div class="sk-line"></div><div class="sk-line short"></div>';
+    card.innerHTML =
+      '<div class="sk-cover"></div>' +
+      '<div class="sk-body">' +
+      '<div class="sk-line"></div><div class="sk-line"></div>' +
+      '<div class="sk-line short"></div><div class="sk-line chip"></div>' +
+      '</div>';
     frag.appendChild(card);
   }
   box.appendChild(frag);
@@ -82,6 +87,67 @@ function showState({ emoji = '⚠', title, desc, retry = false }) {
 
 function hideState() {
   $('#state').hidden = true;
+}
+
+/**
+ * 右下角轻提示：操作反馈走这里。
+ * kind: 'ok' | 'bad' | ''（默认中性）
+ */
+function toast(text, kind = '') {
+  const box = $('#toasts');
+  if (!box) return;
+  const el = document.createElement('div');
+  el.className = `toast${kind ? ` is-${kind}` : ''}`;
+  el.textContent = text;
+  box.appendChild(el);
+  // 最多留三条，多的自己先走
+  while (box.childElementCount > 3) box.firstElementChild.remove();
+  setTimeout(() => {
+    el.classList.add('is-out');
+    setTimeout(() => el.remove(), 200);
+  }, 2400);
+}
+
+// ---------------------------------------------------------------- 搜索
+
+/**
+ * 搜得到的字段：中文名、日文原名、罗马音/英文别名（来自 AniList）、周几。
+ * 拼成一条小写串，命中判断和排序都够用。
+ */
+function entryHaystack(entry) {
+  const bag = [entry.title, entry.titleJp, entry.section];
+  if (Array.isArray(entry.aliases)) bag.push(...entry.aliases);
+  return bag.filter(Boolean).join(' ').toLowerCase();
+}
+
+function matchesKeyword(entry, kw) {
+  if (!kw) return true;
+  return entryHaystack(entry).includes(kw);
+}
+
+/** 把命中关键词的片段包成 <mark>；没命中就原样输出 */
+function fillHighlight(el, text, kw) {
+  el.textContent = '';
+  const q = String(kw || '').trim();
+  const needle = q.toLowerCase();
+  const lower = text.toLowerCase();
+  if (!needle || !lower.includes(needle)) {
+    el.textContent = text;
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  let idx = 0;
+  let hit = lower.indexOf(needle, idx);
+  while (hit !== -1) {
+    if (hit > idx) frag.appendChild(document.createTextNode(text.slice(idx, hit)));
+    const mark = document.createElement('mark');
+    mark.textContent = text.slice(hit, hit + needle.length);
+    frag.appendChild(mark);
+    idx = hit + needle.length;
+    hit = lower.indexOf(needle, idx);
+  }
+  if (idx < text.length) frag.appendChild(document.createTextNode(text.slice(idx)));
+  el.appendChild(frag);
 }
 
 // ---------------------------------------------------------------- 卡片
@@ -132,8 +198,9 @@ function buildCard(entry) {
 
   const title = document.createElement('h3');
   title.className = 'card-title';
-  title.textContent = entry.title;
   title.title = entry.title;
+  fillHighlight(title, entry.title, state.keyword.trim());
+  if (!state.keyword.trim() && entry.titleJp) title.title = `${entry.title}\n${entry.titleJp}`;
 
   const meta = document.createElement('div');
   meta.className = 'card-meta';
@@ -187,7 +254,7 @@ function buildEpStrip(entry, eps) {
   if (!eps.length) {
     const empty = document.createElement('span');
     empty.className = 'ep-empty';
-    empty.textContent = '本地还没扫到文件';
+    empty.textContent = '无本地文件';
     strip.appendChild(empty);
     return strip;
   }
@@ -269,6 +336,7 @@ async function toggleOwned(entry, card, btn) {
     state.ownedCount = res.ownedCount;
     updateCount();
     setStatus(`已标记「${entry.title}」，本季一共 ${res.ownedCount} 部`);
+    toast(next ? '已标记「我有这部」' : '已取消标记', next ? 'ok' : '');
     // 在「我有的」视图里取消勾选，这张卡就该从列表里消失
     if (state.filter === 'owned' && !next) renderCards();
   } catch (err) {
@@ -276,6 +344,7 @@ async function toggleOwned(entry, card, btn) {
     paintOwn(card, btn, !next);
     updateCount();
     setStatus(`保存失败：${err && err.message ? err.message : err}`);
+    toast('标记没存上，再点一次试试', 'bad');
   }
 }
 
@@ -515,6 +584,7 @@ async function submitNote(file, entry, item, noteBtn, textEl, rating, saveBtn, h
     paintNotePreview(item.querySelector('.ep-note-preview'), file.note);
     noteBtn.classList.toggle('is-active', Boolean(file.note));
     setStatus(res.removed ? '这条吐槽清空了' : `吐槽已保存 · ${fmtEpisode(file)}`);
+    toast(res.removed ? '这条吐槽清空了' : '吐槽已保存', 'ok');
     await refreshNotes();
     // 收起来，留出位置看下一次
     setTimeout(() => {
@@ -548,6 +618,7 @@ async function removeNote(file, entry, item, noteBtn) {
     const box = item.querySelector('.ep-note');
     if (box) box.remove();
     setStatus(`已清空 ${fmtEpisode(file)} 的吐槽`);
+    toast('吐槽已删除', 'ok');
     await refreshNotes();
   } catch (err) {
     setStatus(`删不掉：${err && err.message ? err.message : err}`);
@@ -564,6 +635,7 @@ async function playEpisode(file, el) {
     if (!res || !res.ok) {
       const msg = (res && res.error) || '未知错误';
       setStatus(`打不开这一集：${msg}`);
+      toast(`打不开这一集：${msg}`, 'bad');
       el.classList.add('is-error');
       setTimeout(() => el.classList.remove('is-error'), 2400);
       return;
@@ -589,8 +661,11 @@ async function playEpisode(file, el) {
       await refreshNotes();
     }
     setStatus(`已交给默认播放器：${file.name}${res.dry ? '（试运行，没真打开）' : ''}`);
+    const shortName = file.name.length > 30 ? `${file.name.slice(0, 30)}…` : file.name;
+    toast(res.dry ? `试运行：本应打开 ${shortName}` : `已交给默认播放器：${shortName}`, 'ok');
   } catch (err) {
     setStatus(`打不开这一集：${err && err.message ? err.message : err}`);
+    toast(`打不开这一集：${err && err.message ? err.message : err}`, 'bad');
   } finally {
     state.playing = null;
     el.classList.remove('is-loading');
@@ -648,6 +723,8 @@ function renderNotes() {
   pending.hidden = true;
   notesView.hidden = false;
   notesView.innerHTML = '';
+  $('#day-nav').hidden = true;
+  $('#guide').hidden = true;
 
   const items = state.noteList.filter((n) => String(n.text || '').trim() || n.rating);
   updateCount();
@@ -711,6 +788,7 @@ function renderNotes() {
           return;
         }
         setStatus(`已删除「${label}」的吐槽`);
+        toast('吐槽已删除', 'ok');
         await refreshNotes();
         renderNotes();
       } catch (err) {
@@ -737,8 +815,11 @@ async function scanNow(root) {
   if (state.scanning) return;
   state.scanning = true;
   const btn = $('#btn-scan');
+  const live = $('#scan-live');
   btn.disabled = true;
   btn.textContent = '扫描中…';
+  live.textContent = '扫描中 · 已找到 0 个视频';
+  live.hidden = false;
   setStatus(`正在扫 ${root} …`);
 
   try {
@@ -748,18 +829,26 @@ async function scanNow(root) {
     renderScanInfo();
     if (state.filter === 'pending') renderPending();
     else renderCards();
+    markGuideDone();
     const s = res.scan;
     setStatus(
       `${s.files} 个视频 · 认出 ${s.matched.length} 集 · 待确认 ${s.unmatched.length} 个` +
         (s.truncated ? ' · ⚠ 文件太多只扫了一部分' : '') +
         ` · 耗时 ${(s.tookMs / 1000).toFixed(1)} 秒`
     );
+    toast(
+      `扫完啦：${s.files} 个视频，认出 ${s.matched.length} 集` +
+        (s.unmatched.length ? `，${s.unmatched.length} 个待确认` : ''),
+      'ok'
+    );
   } catch (err) {
     setStatus(`扫描失败：${err && err.message ? err.message : err}`);
+    toast(`扫描失败：${err && err.message ? err.message : err}`, 'bad');
   } finally {
     state.scanning = false;
     btn.disabled = false;
     btn.textContent = state.scan ? '重新扫描' : '选择资源目录';
+    live.hidden = true;
   }
 }
 
@@ -779,6 +868,7 @@ async function forgetAliases() {
     return;
   }
   setStatus(`已清空 ${res.removed} 条识别记忆`);
+  toast(`已清空 ${res.removed} 条识别记忆`, 'ok');
   if (state.scan && state.scan.root) await scanNow(state.scan.root);
 }
 
@@ -822,6 +912,8 @@ function renderPending() {
   grid.hidden = true;
   grid.innerHTML = '';
   $('#notes').hidden = true;
+  $('#day-nav').hidden = true;
+  $('#guide').hidden = true;
 
   const list = (state.scan && state.scan.unmatched) || [];
   box.innerHTML = '';
@@ -941,6 +1033,7 @@ async function assignPending(file, select, epInput, btn) {
     renderScanInfo();
     renderPending();
     setStatus(`把「${file.name}」记到了「${entry.title}」第 ${episodeText} 集，文件夹名也记住了`);
+    toast('指派好了', 'ok');
   } catch (err) {
     btn.disabled = false;
     setStatus(`指派失败：${err && err.message ? err.message : err}`);
@@ -953,10 +1046,7 @@ function visibleEntries() {
   return state.entries.filter((e) => {
     if (state.filter === 'owned' && !e.owned) return false;
     if (state.filter === 'local' && !episodesOf(e.id).length) return false;
-    if (!kw) return true;
-    return (
-      e.title.toLowerCase().includes(kw) || (e.section || '').toLowerCase().includes(kw)
-    );
+    return matchesKeyword(e, kw);
   });
 }
 
@@ -973,6 +1063,86 @@ function sectionRank(section) {
 function todaySection() {
   const i = new Date().getDay(); // 0 = 周日
   return DAY_ORDER[(i + 6) % 7];
+}
+
+// ---------------------------------------------------------------- 新手上路
+
+const GUIDE_KEY = 'animelocal.guide.done';
+
+function maybeShowGuide() {
+  const guide = $('#guide');
+  const hasScan = Boolean(state.scan && state.scan.root);
+  if (hasScan || localStorage.getItem(GUIDE_KEY) === '1') {
+    guide.hidden = true;
+    return;
+  }
+  guide.hidden = state.filter === 'pending' || state.filter === 'notes';
+}
+
+function markGuideDone() {
+  localStorage.setItem(GUIDE_KEY, '1');
+  $('#guide').hidden = true;
+}
+
+// ---------------------------------------------------------------- 周几跳转条
+
+/** 滚动到某个周几分组（留出吸顶跳转条的高度） */
+function jumpToDay(section) {
+  const target = [...document.querySelectorAll('.day-section')].find(
+    (el) => el.dataset.section === section
+  );
+  if (!target) return;
+  const scroller = $('.content');
+  const scrollerRect = scroller.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const top = scroller.scrollTop + (targetRect.top - scrollerRect.top) - 46;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  setActiveDay(section);
+}
+
+function setActiveDay(section) {
+  for (const btn of document.querySelectorAll('.day-pill')) {
+    btn.classList.toggle('is-active', btn.dataset.section === section);
+  }
+}
+
+/** 滚到哪一组就高亮哪一个；没有分组时整个条藏起来 */
+function syncActiveDay() {
+  const sections = [...document.querySelectorAll('.day-section')];
+  if (!sections.length) return;
+  const line = $('.content').getBoundingClientRect().top + 60;
+  let current = sections[0];
+  for (const el of sections) {
+    if (el.getBoundingClientRect().top <= line) current = el;
+  }
+  setActiveDay(current.dataset.section);
+}
+
+function renderDayNav(ordered) {
+  const nav = $('#day-nav');
+  nav.innerHTML = '';
+  if (!ordered.length || state.filter === 'pending' || state.filter === 'notes') {
+    nav.hidden = true;
+    return;
+  }
+  const today = todaySection();
+  for (const [section, items] of ordered) {
+    const m = /^(周[一二三四五六日])/.exec(section);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-pill';
+    btn.dataset.section = section;
+    if (section.startsWith(today)) btn.classList.add('is-today');
+    const label = document.createElement('span');
+    label.textContent = m ? m[1] : '其他';
+    const num = document.createElement('b');
+    num.textContent = String(items.length);
+    btn.append(label, num);
+    btn.addEventListener('click', () => jumpToDay(section));
+    nav.appendChild(btn);
+  }
+  nav.hidden = false;
+  requestAnimationFrame(syncActiveDay);
 }
 
 function updateCount() {
@@ -1038,6 +1208,7 @@ function renderCards() {
   for (const [section, items] of ordered) {
     const block = document.createElement('section');
     block.className = 'day-section';
+    block.dataset.section = section;
 
     // 「周一 (月)」拆成「周一」+ 淡色的「(月)」
     const m = /^(周[一二三四五六日])\s*(.*)$/.exec(section);
@@ -1074,6 +1245,7 @@ function renderCards() {
   grid.appendChild(frag);
   grid.hidden = false;
 
+  renderDayNav(ordered);
   updateCount();
 
   if (!list.length) {
@@ -1093,7 +1265,9 @@ function renderCards() {
       showState({
         emoji: '🔍',
         title: '没有匹配的动画',
-        desc: kw ? `「${state.keyword}」没搜到，换个词试试` : '这部季度页好像是空的',
+        desc: kw
+          ? `「${state.keyword}」没搜到。中文名、日文原名、罗马音都能搜，比如 goblin / 転生`
+          : '这部季度页好像是空的',
       });
     }
   } else {
@@ -1186,8 +1360,26 @@ function bindEvents() {
   // 扫目录时主进程会主动推进度过来
   window.api.onScanProgress(({ found, dir }) => {
     if (!state.scanning) return;
+    $('#scan-live').textContent = `扫描中 · 已找到 ${found} 个视频`;
     setStatus(`正在扫… 已找到 ${found} 个视频（${dir}）`);
   });
+
+  // 引导卡片：关掉就记住，别再弹
+  $('#guide-close').addEventListener('click', markGuideDone);
+
+  // 滚动时高亮当前周几
+  let scrollTick = 0;
+  $('.content').addEventListener(
+    'scroll',
+    () => {
+      if (scrollTick) return;
+      scrollTick = requestAnimationFrame(() => {
+        scrollTick = 0;
+        if (!$('#day-nav').hidden) syncActiveDay();
+      });
+    },
+    { passive: true }
+  );
 
   // 「全部 / 我有的」分段筛选
   for (const btn of document.querySelectorAll('.seg-btn')) {
@@ -1233,6 +1425,7 @@ async function boot() {
   await loadCatalog(false);
   await refreshNotes();
   await loadScanState();
+  maybeShowGuide();
 }
 
 boot();

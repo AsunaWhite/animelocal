@@ -27,11 +27,13 @@
   --warn: #d98300;
 
   --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.05), 0 1px 3px rgba(17, 24, 39, 0.04);
-  --shadow-md: 0 10px 26px rgba(17, 24, 39, 0.1);
+  --shadow-md: 0 6px 18px rgba(17, 24, 39, 0.075);
 
   --r-sm: 7px;
   --r-md: 10px;
   --r-lg: 14px;
+  --dur: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 * {
@@ -240,6 +242,10 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .btn:disabled {
   opacity: 0.55;
   cursor: default;
@@ -327,6 +333,233 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.scan-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-live::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border: 2px solid #c9dcff;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------------------------------------------------------------- 周几跳转条 */
+
+.day-nav {
+  position: sticky;
+  top: -20px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+  padding: 8px 0;
+  background: linear-gradient(180deg, var(--bg) 74%, rgba(246, 247, 249, 0));
+}
+
+.day-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.day-pill:hover {
+  border-color: #cbdcfb;
+  color: var(--accent-deep);
+}
+
+.day-pill.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.day-pill b {
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-pill.is-active b {
+  color: var(--accent-deep);
+}
+
+.day-pill.is-today::after {
+  content: "今天";
+  margin-left: 1px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- 新手上路引导 */
+
+.guide {
+  margin: 6px 0 14px;
+  padding: 14px 16px 6px;
+  border: 1px solid #d9e6fb;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, #f7faff, #fff);
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+}
+
+.guide-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+
+.guide-close {
+  appearance: none;
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.guide-close:hover {
+  background: #eef2f9;
+  color: var(--text-2);
+}
+
+.guide-steps {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.guide-steps li {
+  display: flex;
+  gap: 9px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.guide-steps small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.guide-no {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- 轻提示 */
+
+.toasts {
+  position: fixed;
+  right: 22px;
+  bottom: 46px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  max-width: 420px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: toast-in var(--dur) var(--ease);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.toast.is-ok {
+  border-color: #bfe8d6;
+  color: #0d7a52;
+}
+
+.toast.is-bad {
+  border-color: #f3c0bb;
+  color: #b42318;
+}
+
+.toast.is-out {
+  animation: toast-out var(--dur) var(--ease) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .seg {
@@ -482,14 +715,20 @@ body {
   transform: scale(1.03);
 }
 
+.card-cover.is-missing {
+  background: linear-gradient(140deg, #eef3fa 0%, #e6edf7 55%, #f3f0fb 100%);
+}
+
 .card-cover.is-missing::after {
-  content: "无封面";
+  content: "番";
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--muted);
-  font-size: 12px;
+  color: #c3cfdf;
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .badge-time {
@@ -516,30 +755,47 @@ body {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  background: rgba(17, 24, 39, 0.34);
-  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-2);
   font-size: 13px;
+  box-shadow: 0 1px 4px rgba(17, 24, 39, 0.16);
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.14s, background 0.14s, border-color 0.14s, transform 0.14s;
+  opacity: 0.55; /* 平时半透明常显：不用摸黑找 */
+  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
   backdrop-filter: blur(3px);
 }
 
 .card:hover .own-btn,
-.card.is-owned .own-btn {
+.card.is-owned .own-btn,
+.own-btn:focus-visible {
   opacity: 1;
+}
+
+.own-btn:empty::before {
+  content: "+";
+  font-size: 15px;
+  line-height: 1;
+  color: #8a93a3;
 }
 
 .own-btn:hover {
   transform: scale(1.08);
-  background: rgba(17, 24, 39, 0.55);
+  background: var(--accent);
+  color: #fff;
+}
+
+.own-btn:hover:empty::before {
+  color: #fff;
 }
 
 .card.is-owned .own-btn {
   background: var(--ok);
   border-color: #fff;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(18, 160, 109, 0.32);
 }
 
 /* 卡片正文 */
@@ -560,6 +816,15 @@ body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 2.84em; /* 两行高度占位：一行的标题也留两行，行与行之间元信息对齐 */
+}
+
+.card-title mark,
+.note-text mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: #ffe58f;
+  color: inherit;
 }
 
 .card-meta {
@@ -718,6 +983,7 @@ body {
   border-radius: var(--r-lg);
   overflow: hidden;
   padding-bottom: 12px;
+  box-shadow: var(--shadow-sm);
 }
 
 .sk-cover {
@@ -727,16 +993,30 @@ body {
   animation: shimmer 1.3s linear infinite;
 }
 
+.sk-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 10px 22px;
+}
+
 .sk-line {
-  height: 9px;
-  margin: 12px 12px 0;
+  height: 10px;
   border-radius: 5px;
   background: #f0f3f8;
 }
 
 .sk-line.short {
   width: 55%;
-  margin-top: 8px;
+  height: 8px;
+}
+
+.sk-line.chip {
+  width: 38px;
+  height: 18px;
+  margin-top: 6px;
+  border-radius: 6px;
+  background: #f3f6fa;
 }
 
 @keyframes shimmer {
@@ -1309,4 +1589,31 @@ body {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---------------------------------------------------------------- 微互动统一 */
+
+.ep-chip,
+.seg-btn,
+.day-pill,
+.own-btn,
+.note-del,
+.guide-close {
+  transition-duration: var(--dur);
+  transition-timing-function: var(--ease);
+}
+
+.ep-chip:active,
+.seg-btn:active,
+.day-pill:active,
+.note-del:active {
+  transform: scale(0.965);
+}
+
+.drawer-panel {
+  animation-duration: var(--dur);
+}
+
+.ep-note {
+  animation-duration: var(--dur);
 }
